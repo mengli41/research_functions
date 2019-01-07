@@ -142,9 +142,9 @@ class PVFactors:
         return alpha
 
     #--------------------------------------------------------------------------
-    def alpha_002(self):
+    def alpha_002(self, delay_window = 1):
         result = (((self.close - self.low) - (self.high - self.close)) 
-                  / ((self.high - self.low))).diff()
+                  / ((self.high - self.low))).diff(delay_window)
         m = result.dropna(how = 'all')
         alpha = m[(m < np.inf) & (m > -np.inf)]
 
