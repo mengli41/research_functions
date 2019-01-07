@@ -95,6 +95,18 @@ class PVFactors:
         return bn.rankdata(x)[-1]
 
     #--------------------------------------------------------------------------
+    def get_liquid_contract_data(self, data_df, liquid_contract_df):
+        liquid_data_df = data_df.copy()
+
+        for column in liquid_contract_df.columns: 
+            if column in liquid_data_df.columns:
+                liquid_data_df.loc[:, column] = np.where(
+                    liquid_contract_df.loc[liquid_data_df.index, column] == 0, 
+                    np.nan, liquid_data_df.loc[:, column])
+
+        return liquid_data_df
+
+    #--------------------------------------------------------------------------
     def rsi(self, price, n = 14):
         delta = price.diff()
 
@@ -131,13 +143,26 @@ class PVFactors:
         return ma_close_ratio
 
     #--------------------------------------------------------------------------
-    def alpha_001(self, rolling_window):
-        data1 = self.volume.diff(periods = 1).rank(axis = 1, pct = True)
-        data2 = ((self.close - self.open_price) / self.open_price).rank(
-            axis = 1, pct = True)
+#    def alpha_001(self, rolling_window):
+#        data1 = self.volume.diff(periods = 1).rank(axis = 1, pct = True)
+#        data2 = ((self.close - self.open_price) / self.open_price).rank(
+#            axis = 1, pct = True)
+#        alpha = -data1.rolling(window = rolling_window).corr(
+#            data2, pairwise = False)
+#        alpha = alpha.dropna(how = 'all')
+#
+#        return alpha
+    def alpha_001(self, rolling_window, liquid_contract_df):
+        tmp_1 = self.volume.diff()
+        tmp_1_liquid = self.get_liquid_contract_data(tmp_1, liquid_contract_df)
+        data1 = tmp_1_liquid.rank(axis = 1, pct = True)
+
+        tmp_2 = (self.close - self.open_price) / self.open_price
+        tmp_2_liquid = self.get_liquid_contract_data(tmp_2, liquid_contract_df)
+        data2 = tmp_2_liquid.rank(axis = 1, pct = True)
+
         alpha = -data1.rolling(window = rolling_window).corr(
-            data2, pairwise = False)
-        alpha = alpha.dropna(how = 'all')
+            data2, pairwise = False).dropna(how = 'all')
 
         return alpha
 
@@ -157,10 +182,16 @@ class PVFactors:
         condition2 = (self.close > delay1)
         condition3 = (self.close < delay1)
     
-        part2 = ((self.close - np.minimum(delay1[condition2], 
-                                          self.low[condition2])))
-        part3 = ((self.close - np.maximum(delay1[condition3], 
-                                          self.low[condition3])))
+#        part2 = (self.close - np.minimum(delay1[condition2], 
+#                                         self.low[condition2]))
+#        part3 = (self.close - np.maximum(delay1[condition3], 
+#                                         self.low[condition3]))
+        part2 = (np.log(self.close) 
+                 - np.log(np.minimum(delay1[condition2], 
+                                     self.low[condition2])))
+        part3 = (np.log(self.close) 
+                 - np.log(np.maximum(delay1[condition3], 
+                                     self.low[condition3])))
 
         result = part2.fillna(0) + part3.fillna(0)
         alpha = result.rolling(window = rolling_window).sum()
@@ -217,7 +248,7 @@ class PVFactors:
         return alpha
 
     #--------------------------------------------------------------------------
-    def alpha_006(self, open_mult = 0.85, diff_window = 4):
+    def alpha_006(self, liquid_contract_df, open_mult = 0.85, diff_window = 4):
         condition1 = ((self.open_price * open_mult 
                        + self.high * (1 - open_mult)).diff(diff_window) > 0)
         condition2 = ((self.open_price * open_mult 
@@ -243,36 +274,72 @@ class PVFactors:
         part3 = indicator3[condition3].fillna(0)
 
         result = part1 + part2 + part3
-        alpha = result.rank(axis=1, pct=True)
+        result_liquid = self.get_liquid_contract_data(
+            result, liquid_contract_df)
+        alpha = result_liquid.rank(axis = 1, pct = True)
 
         return alpha.dropna(how = 'all')
 
     #--------------------------------------------------------------------------
-    def alpha_006_alter(self, open_mult = 0.85, diff_window = 4):
-        result = (self.open_price*open_mult + self.high*(1 - open_mult)).diff(
-            diff_window)
-        alpha = result.rank(axis = 1, pct = True).dropna(how = 'all')
+    def alpha_006_alter(self, liquid_contract_df, 
+                        open_mult = 0.85, diff_window = 4):
+#        result = (self.open_price*open_mult + self.high*(1 - open_mult)).diff(
+#            diff_window)
+        result = np.log(self.open_price * open_mult 
+                        + self.high * (1 - open_mult)).diff(diff_window)
+        result_liquid = self.get_liquid_contract_data(
+            result, liquid_contract_df)
+        alpha = result_liquid.rank(axis = 1, pct = True).dropna(how = 'all')
 
         return alpha
 
     #--------------------------------------------------------------------------
-    def alpha_007(self, com_num_1 = 3, com_num_2 = 3, com_num_3 = 3):
-        part1 = (np.maximum(self.vwap - self.close, com_num_1)).rank(
-            axis = 1, pct = True)
-        part2 = (np.minimum(self.vwap - self.close, com_num_2)).rank(
-            axis = 1, pct = True)
-        part3 = (self.volume.diff(com_num_3)).rank(axis = 1, pct = True)
-        alpha = (part1 + part2 * part3).dropna(how = 'all')
+    def alpha_007(self, liquid_contract_df, com_num_1 = 3, 
+                  com_num_2 = 3, com_num_3 = 3):
+        part1 = np.maximum(self.vwap - self.close, com_num_1)
+        part1_liquid = self.get_liquid_contract_data(part1, liquid_contract_df)
+        part1_rank = part1_liquid.rank(axis = 1, pct = True)
+
+        part2 = np.minimum(self.vwap - self.close, com_num_2)
+        part2_liquid = self.get_liquid_contract_data(part2, liquid_contract_df)
+        part2_rank = part2_liquid.rank(axis = 1, pct = True)
+
+        part3 = self.volume.diff(com_num_3)
+        part3_liquid = self.get_liquid_contract_data(part3, liquid_contract_df)
+        part3_rank = part3_liquid.rank(axis = 1, pct = True)
+
+        alpha = (part1_rank + part2_rank * part3_rank).dropna(how = 'all')
 
         return alpha
 
     #--------------------------------------------------------------------------
-    def alpha_008(self, high_low_mult = 0.2, diff_window = 4):
-        temp = ((self.high + self.low) * 0.5 * high_low_mult 
-                + self.vwap * (1 - high_low_mult))
+    def alpha_007_alter(self, liquid_contract_df, diff_window = 3):
+        part1 = (np.log(self.vwap) - np.log(self.close)).rolling(
+            window = diff_window).max()
+        part1_liquid = self.get_liquid_contract_data(part1, liquid_contract_df)
+        part1_rank = part1_liquid.rank(axis = 1, pct = True)
 
-        alpha = -temp.diff(diff_window).rank(axis = 1, pct = True).dropna(
-            how = 'all')
+        part2 = (np.log(self.vwap) - np.log(self.close)).rolling(
+            window = diff_window).min()
+        part2_liquid = self.get_liquid_contract_data(part2, liquid_contract_df)
+        part2_rank = part2_liquid.rank(axis = 1, pct = True)
+
+        part3 = np.log(self.volume).diff(diff_window)
+        part3_liquid = self.get_liquid_contract_data(part3, liquid_contract_df)
+        part3_rank = part3_liquid.rank(axis = 1, pct = True)
+
+        alpha = (part1_rank + part2_rank * part3_rank).dropna(how = 'all')
+
+        return alpha
+
+    #--------------------------------------------------------------------------
+    def alpha_008(self, liquid_contract_df, 
+                  high_low_mult = 0.2, diff_window = 4):
+        temp = -np.log((self.high + self.low) * 0.5 * high_low_mult 
+                       + self.vwap * (1 - high_low_mult)).diff(diff_window)
+        temp_liquid = self.get_liquid_contract_data(temp, liquid_contract_df)
+
+        alpha = temp_liquid.rank(axis = 1, pct = True).dropna(how = 'all')
 
         return alpha
 
@@ -283,19 +350,38 @@ class PVFactors:
              - (self.high.shift() + self.low.shift()) * 0.5) 
             * (self.high - self.low) / self.volume)
         result = temp.ewm(alpha = alpha).mean()
-        alpha = result
-        return alpha.dropna(how = 'all')
+        alpha = result.dropna(how = 'all')
+
+        return alpha
 
     #--------------------------------------------------------------------------
-    def alpha_010(self, std_window = 20, com_num = 5):
+    def alpha_010(self, liquid_contract_df, std_window = 20, com_num = 5):
         ret = np.log(self.close).diff()
-        condtion = (ret < 0)
+        condition = (ret < 0)
 
         part1 = (ret.rolling(window = std_window).std()[condition]).fillna(0)
-        part2 = (self.close[~condtion]).fillna(0)
+        part2 = (self.close[~condition]).fillna(0)
 
         result = np.maximum((part1 + part2) ** 2, com_num)
-        alpha = result.rank(axis = 1, pct = True).dropna(how = 'all')
+        result_liquid = self.get_liquid_contract_data(
+            result, liquid_contract_df)
+        alpha = result_liquid.rank(axis = 1, pct = True).dropna(how = 'all')
+
+        return alpha
+
+    #--------------------------------------------------------------------------
+    def alpha_010_alter(self, liquid_contract_df, 
+                        std_window = 20, com_num = 5):
+        ret = np.log(self.close).diff()
+        condition = (ret < 0)
+
+        part1 = (ret.rolling(window = std_window).std()[condition]).fillna(0)
+        part2 = (self.close[~condition]).fillna(0)
+
+        result = ((part1 + part2) ** 2).rolling(window = com_num).max()
+        result_liquid = self.get_liquid_contract_data(
+            result, liquid_contract_df)
+        alpha = result_liquid.rank(axis = 1, pct = True).dropna(how = 'all')
 
         return alpha
 
