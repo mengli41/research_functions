@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import scipy as sp
 import bottleneck as bn
 import itertools as it
 
@@ -395,13 +396,23 @@ class PVFactors:
         return alpha.dropna(how = 'all')
 
     #--------------------------------------------------------------------------
-    def alpha_012(self, vwap_window = 10):
+    def alpha_011_alter(self, rolling_window = 6):
+        temp = (((self.close - self.low) - (self.high - self.close)) 
+                / (self.high - self.low))
+        alpha = temp.rolling(window = rolling_window).sum()
+
+        return alpha.dropna(how = 'all')
+
+    #--------------------------------------------------------------------------
+    def alpha_012(self, liquid_contract_df, vwap_window = 10):
         vwap_ma = self.vwap.rolling(window = vwap_window).mean()
         temp1 = self.open_price - vwap_ma
-        part1 = temp1.rank(axis = 1, pct = True)
+        temp1_liquid = self.get_liquid_contract_data(temp1, liquid_contract_df)
+        part1 = temp1_liquid.rank(axis = 1, pct = True)
 
         temp2 = (self.close - self.vwap).abs()
-        part2 = -temp2.rank(axis = 1, pct = True)
+        temp2_liquid = self.get_liquid_contract_data(temp2, liquid_contract_df)
+        part2 = -temp2_liquid.rank(axis = 1, pct = True)
 
         alpha = (part1 * part2).dropna(how = 'all')
 
@@ -415,11 +426,25 @@ class PVFactors:
         return alpha.dropna(how = 'all')
 
     #--------------------------------------------------------------------------
+    def alpha_013_alter(self):
+        result = np.log((self.high * self.low) ** 0.5) - np.log(self.vwap)
+        alpha = result.dropna(how = 'all')
+
+        return alpha
+
+    #--------------------------------------------------------------------------
     def alpha_014(self, shift_window = 5):
         result = self.close - self.close.shift(shift_window)
         alpha = result
 
         return alpha.dropna(how = 'all')
+
+    #--------------------------------------------------------------------------
+    def alpha_014_alter(self, shift_window = 5):
+        result = np.log(self.close) - np.log(self.close.shift(shift_window))
+        alpha = result.dropna(how = 'all')
+
+        return alpha
 
     #--------------------------------------------------------------------------
     def alpha_015(self, close_shift = 1):
@@ -429,9 +454,14 @@ class PVFactors:
         return alpha.dropna(how = 'all')
 
     #--------------------------------------------------------------------------
-    def alpha_016(self, corr_window = 5, max_window = 5):
-        temp1 = self.volume.rank(axis = 1, pct = True)
-        temp2 = self.vwap.rank(axis = 1, pct = True) 
+    def alpha_016(self, liquid_contract_df, corr_window = 5, max_window = 5):
+        volume_liquid = self.get_liquid_contract_data(
+            self.volume, liquid_contract_df)
+        vwap_liquid = self.get_liquid_contract_data(
+            np.log(self.vwap).diff(), liquid_contract_df)
+
+        temp1 = volume_liquid.rank(axis = 1, pct = True)
+        temp2 = vwap_liquid.rank(axis = 1, pct = True) 
 
         part = temp1.rolling(window = corr_window).corr(
             temp2, pairwise = False)
@@ -440,15 +470,17 @@ class PVFactors:
         result = part.rank(axis = 1, pct = True)
         alpha = result.rolling(window = max_window).max().dropna(how = 'all')
 
-        return alpha.dropna()
+        return alpha
 
     #--------------------------------------------------------------------------
-    def alpha_017(self, ts_max_window = 15, close_diff_window = 5):
+    def alpha_017(self, liquid_contract_df, 
+                  ts_max_window = 15, close_diff_window = 5):
         temp1 = self.vwap.rolling(window = ts_max_window).max()
-        temp2 = (self.close - temp1).dropna(how = 'all')
-        part1 = temp2.rank(axis = 1, pct = True)
+        temp2 = (self.vwap - temp1)#.dropna(how = 'all')
+        temp2_liquid = self.get_liquid_contract_data(temp2, liquid_contract_df)
 
-        part2 = self.close.diff(close_diff_window)
+        part1 = temp2_liquid.rank(axis = 1, pct = True)
+        part2 = np.log(self.close).diff(close_diff_window)
 
         alpha = (part1 ** part2).dropna(how = 'all')
 
@@ -488,6 +520,62 @@ class PVFactors:
         alpha = result
 
         return alpha.dropna(how = 'all')
+
+    #--------------------------------------------------------------------------
+    def alpha_021(self, close_rolling_window = 6, minimum_estimate_size = 6):
+        part1 = self.close.rolling(window = close_rolling_window).mean()
+        part2 = np.arange(1, close_rolling_window + 1)
+
+#        temp = part1.rolling(window = close_rolling_window).apply(
+#            lambda x: sp.stats.linregress(x, part2))
+#        beta_list = [temp[i].slope for i in range(len(temp))]
+#
+#        alpha = pd.Series(beta_list, index = temp.index).dropna(how = 'all')
+        
+        N = part1.shape[0]
+        date_list = [
+            [part1.index[i-close_rolling_window+1], part1.index[i]]
+            for i in range(close_rolling_window-1, N)]
+
+        beta_df = pd.DataFrame(index = part1.index[close_rolling_window:])
+
+        for dep_var in part1.columns:
+            estimate_df = part1[[dep_var]]
+#            estimate_df['x'] = part2.copy()
+            estimate_df['const'] = 1
+
+            for date_pair in date_list:
+                start_date = date_pair[0]
+                end_date = date_pair[1]
+
+                data_df = estimate_df.loc[start_date:end_date]#.dropna()
+                data_df['x'] = part2.copy()
+                data_df = data_df.dropna()
+                if data_df.shape[0] > minimum_estimate_size:
+                    x = np.array(data_df.loc[:, ['x', 'const']])
+                    x = x.reshape((len(x), 2))
+                    y = np.array(data_df.loc[:, dep_var])
+
+                    beta = np.linalg.inv(x.T.dot(x)).dot(x.T).dot(y)
+                    beta_df.loc[end_date, dep_var] = beta[0]
+                else:
+                    beta_df.loc[end_date, dep_var] = np.nan
+
+        alpha = beta_df
+
+        return alpha
+
+    #--------------------------------------------------------------------------
+    def alpha_021_alter(self, close_rolling_window = 6):
+        part1 = self.close.rolling(window = close_rolling_window).mean()
+        part2 = np.arange(1, close_rolling_window + 1)
+
+        temp = part1.rolling(window = close_rolling_window).apply(
+            lambda x: np.corrcoef(x, part2)[0,1])
+
+        alpha = temp.dropna(how = 'all')
+
+        return alpha
 
     #--------------------------------------------------------------------------
     def alpha_022(self, close_window = 6, shift_window = 3, 
