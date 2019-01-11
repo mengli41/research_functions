@@ -622,10 +622,20 @@ class PVFactors:
         return alpha.dropna(how = 'all')
 
     #--------------------------------------------------------------------------
+    def alpha_024_alter(self, shift_window = 5, alpha = 1.0 / 5.0):
+        delay = self.close.shift(shift_window)
+        result = np.log(self.close) - np.log(delay)
+        alpha = result.ewm(alpha = alpha).mean()
+
+        return alpha.dropna(how = 'all')
+
+
+    #--------------------------------------------------------------------------
     def alpha_026(self, close_window = 7, shift_window = 5, vwap_window = 230):
         part1 = self.close.rolling(window = close_window).mean() - self.close
         delay = self.close.shift(shift_window)
-        part2 = self.vwap.rolling(window = vwap_window).corr(delay)
+        part2 = self.vwap.rolling(window = vwap_window).corr(
+            delay, pairwise = False)
         alpha = part1 + part2
 
         return alpha.dropna(how = 'all')
