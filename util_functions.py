@@ -402,6 +402,151 @@ def OLSReg(X1,Y):
 
 ###############################################################################
 ###############################################################################
+# Rolling Estimation and Prediction
+#------------------------------------------------------------------------------
+def generate_training_backtest_periods(
+    total_range, test_range, 
+    backtest_panel_size, training_panel_size, prediction_size):
+
+    backtest_date_list = []
+    training_date_list = []
+
+    backtest_period = test_range
+    training_period = total_range
+
+    backtest_start_index = 0
+
+    while backtest_start_index < len(backtest_period):
+        end_index = min(len(backtest_period) - 1,
+                        backtest_start_index + backtest_panel_size - 1)
+
+        backtest_start_date = backtest_period[backtest_start_index]
+        backtest_end_date = backtest_period[end_index]
+
+        backtest_date_list.append([backtest_start_date, backtest_end_date])
+
+        backtest_start_index += backtest_panel_size
+
+        # build the training date list based on the backtest end date
+        training_end_index = training_period.index(backtest_end_date)
+        training_start_index = max(
+            0, training_end_index - training_panel_size + 1)
+
+        training_start_date = training_period[training_start_index]
+        training_end_date = training_period[training_end_index]
+
+        training_date_list.append([training_start_date, training_end_date])
+    
+    periods_dict = {'training_date_list': training_date_list, 
+                    'backtest_date_list': backtest_date_list}
+
+    return periods_dict
+
+#------------------------------------------------------------------------------
+def normal_rolling_model_building(
+    pv_feature_df, close_df, 
+    target_vars, ind_vars, 
+    prediction_size, liquid_contract_df, 
+    training_date_list, backtest_date_list, 
+    rolling_params = False):
+
+    dummy_model_list = []
+    dummy_factor_return_df = pd.DataFrame()
+    dummy_factor_return_t_value_df = pd.DataFrame()
+    dummy_prediction_df = pd.DataFrame()
+    trading_commodity_list = pv_feature_df.index.levels[0]
+
+    for i in range(0, len(backtest_date_list)-1):
+        #----------------------------------------------------------------------
+        # cross-sectional estimation
+        panel_start_date = training_date_list[i][0]
+        panel_end_date = training_date_list[i][1]
+
+        #----------------------------------------------------------------------
+        # Build the DataFrame containing all the features.
+        model_use_df = pv_feature_df.loc[
+            (slice(None), slice(panel_start_date, panel_end_date)), ind_vars]
+
+        #----------------------------------------------------------------------
+        model_close_df = close_df.loc[panel_start_date:panel_end_date, 
+                                      trading_commodity_list]
+        model_return_df = pd.DataFrame(
+            (np.log(model_close_df.shift(-prediction_size))
+             - np.log(model_close_df)))
+
+        model_return_df = get_liquid_contract_data(
+            model_return_df, liquid_contract_df)
+
+        # Use original return as the dependent variable.
+        model_original_return_df = pd.DataFrame(
+            model_return_df.unstack(0), columns = ['original_return'])
+
+        #----------------------------------------------------------------------
+        final_model_df = pd.concat(
+            [model_use_df, model_original_return_df], axis = 1)
+        final_model_df = final_model_df.dropna()
+
+        dep_var = 'original_return'
+        mod_ind_vars = [ele for ele in final_model_df.columns 
+                        if ele != dep_var]
+
+        X = sm.add_constant(final_model_df[mod_ind_vars].astype(np.float64))
+        Y = final_model_df[dep_var].astype(np.float64)
+
+        model = regression.linear_model.OLS(Y, X).fit()
+
+        dummy_model_list.append(model)
+
+        temp_factor_return_df = pd.DataFrame(model.params).T
+        temp_factor_return_df['start_date'] = panel_start_date
+        temp_factor_return_df['end_date'] = panel_end_date
+        dummy_factor_return_df = pd.concat(
+            [dummy_factor_return_df, temp_factor_return_df])
+
+        temp_factor_return_t_value_df = pd.DataFrame(model.tvalues).T
+        temp_factor_return_t_value_df['start_date'] = panel_start_date
+        temp_factor_return_t_value_df['end_date'] = panel_end_date
+        dummy_factor_return_t_value_df = pd.concat(
+            [dummy_factor_return_t_value_df, temp_factor_return_t_value_df])
+
+        #----------------------------------------------------------------------
+        test_start_date = backtest_date_list[i+1][0]
+        test_end_date = backtest_date_list[i+1][1]
+
+        print 'training: ', panel_start_date, panel_end_date
+        print 'testing: ', test_start_date, test_end_date
+
+        test_df = pv_feature_df.loc[
+            (slice(None), slice(test_start_date, test_end_date)), mod_ind_vars]
+        
+        #----------------------------------------------------------------------
+        if rolling_params: 
+            prediction_df = pd.DataFrame(
+                test_df[target_vars].multiply(
+                    dummy_factor_return_df[target_vars].ewm(
+                        span = 5).mean().tail(1).loc[0, :]).sum(
+                            axis = 1, skipna = False), 
+                columns = ['prediction'])
+        else: 
+            prediction_df = pd.DataFrame(
+                test_df[target_vars].multiply(
+                    model.params[target_vars]).sum(axis = 1, skipna = False),
+                columns = ['prediction'])
+
+        dummy_prediction_df = pd.concat(
+            [dummy_prediction_df, prediction_df.unstack(0)], axis = 0)
+
+    result_dict = {
+        'model_list': dummy_model_list, 
+        'factor_return_df': dummy_factor_return_df, 
+        'factor_return_t_value_df': dummy_factor_return_t_value_df, 
+        'prediction_df': dummy_prediction_df}
+
+    return result_dict
+
+
+###############################################################################
+###############################################################################
 # Strategy Backtest
 class StrategyBacktest:
     #--------------------------------------------------------------------------
