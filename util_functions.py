@@ -23,7 +23,7 @@ from scipy.stats import rankdata
 from matplotlib.dates import date2num
 from functools import wraps
 from sqlalchemy import create_engine
-from datetime import time
+#from datetime import time
 
 from statsmodels.compat import lzip
 from statsmodels import regression
@@ -448,7 +448,7 @@ def normal_rolling_model_building(
     target_vars, ind_vars, 
     prediction_size, liquid_contract_df, 
     training_date_list, backtest_date_list, 
-    rolling_params = False):
+    rolling_params = False, print_dates = False):
 
     dummy_model_list = []
     dummy_factor_return_df = pd.DataFrame()
@@ -513,8 +513,9 @@ def normal_rolling_model_building(
         test_start_date = backtest_date_list[i+1][0]
         test_end_date = backtest_date_list[i+1][1]
 
-        print 'training: ', panel_start_date, panel_end_date
-        print 'testing: ', test_start_date, test_end_date
+        if print_dates:
+            print 'training: ', panel_start_date, panel_end_date
+            print 'testing: ', test_start_date, test_end_date
 
         test_df = pv_feature_df.loc[
             (slice(None), slice(test_start_date, test_end_date)), mod_ind_vars]
