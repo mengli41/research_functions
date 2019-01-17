@@ -20,9 +20,9 @@ class IndustryClassification:
             'PreciousMetal': ['au', 'ag'],
             'IndustrialMetal': ['cu', 'zn', 'al', 'ni', 'pb', 'sn'],
             'BlackChain': ['rb', 'j', 'i', 'jm', 'hc', 'SM', 'SF', 'FG', 'ZC'],
-            'EnergyChem': ['l', 'MA', 'pp', 'TA', 'ru', 'bu', 'v', 'sc'],
+            'EnergyChem': ['l', 'MA', 'pp', 'TA', 'ru', 'bu', 'v', 'sc', 'eg'],
             'Agriculture': ['cs', 'c', 'a', 'm', 'RM', 'y', 'p', 'OI', 'b'],
-            'SoftComm': ['CF', 'SR', 'jd', 'AP']}
+            'SoftComm': ['CF', 'SR', 'jd', 'AP', 'sp']}
 
         self.industry_class_2 = {
             'Metal': ['cu', 'zn', 'al', 'ni', 'pb', 'sn', 'au', 'ag'], 
