@@ -686,9 +686,9 @@ class StrategyBacktest:
 
             self.port_return_df = (
                 self.pos_df.shift().multiply(
-                    self.intraday_return_df.loc[self.pos_df.index]) 
+                    self.intraday_return_df.reindex(self.pos_df.index)) 
                 + self.pos_df.shift(2).multiply(
-                    self.interday_return_df.loc[self.pos_df.index]))
+                    self.interday_return_df.reindex(self.pos_df.index)))
 
             self.port_return_df['port_return'] = (
                 self.port_return_df.sum(axis = 1))
