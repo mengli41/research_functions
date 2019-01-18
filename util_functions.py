@@ -257,8 +257,8 @@ def read_all_intraday_data_v2(
 #------------------------------------------------------------------------------
 def read_tick_data_from_sql(contract_type, date_start, date_end, iprint = 0):
     db = create_engine(
-#        'postgresql+psycopg2://readonly:123456@192.168.1.118/ticks_timescale')
-        'postgresql+psycopg2://limeng:123456@192.168.1.188/ticks_timescale')
+        'postgresql+psycopg2://readonly:123456@192.168.1.120/ticks_timescale')
+#        'postgresql+psycopg2://limeng:123456@192.168.1.188/ticks_timescale')
 
     database_name = contract_type
 
@@ -281,123 +281,266 @@ def read_tick_data_from_sql(contract_type, date_start, date_end, iprint = 0):
 
 ###############################################################################
 ###############################################################################
-# Plot
+# Data Preprocess
 #------------------------------------------------------------------------------
-def plot_heatmap(data, title = 'Heatmap', show_legend = True,
-                 show_labels = True, label_fmt = '.2f',
-                 vmin = None, vmax = None, figsize = None,
-                 cmap = 'RdYlGn_r', **kwargs):
-    """
-    Plot a heatmap using matplotlib's pcolor.
-
-    Args:
-        * data (DataFrame): DataFrame to plot. Usually small matrix (ex.
-            correlation matrix).
-        * title (string): Plot title
-        * show_legend (bool): Show color legend
-        * show_labels (bool): Show value labels
-        * label_fmt (str): Label format string
-        * vmin (float): Min value for scale
-        * vmax (float): Max value for scale
-        * cmap (string): Color map  cmap='RdYlGn_r' or  'RdBu'
-        * kwargs: Passed to matplotlib's pcolor
-
-    """
-    fig, ax = plt.subplots(figsize = figsize)
-
-    heatmap = ax.pcolor(data, vmin = vmin, vmax = vmax, cmap = cmap)
-    # for some reason heatmap has the y values backwards....
-    ax.invert_yaxis()
-
-    plt.title(title)
-
-    if show_legend:
-        fig.colorbar(heatmap)
-
-    if show_labels:
-        vals = data.values
-        for x in range(data.shape[0]):
-            for y in range(data.shape[1]):
-                plt.text(y + 0.5, x + 0.5, format(vals[x, y], label_fmt),
-                         horizontalalignment = 'center',
-                         verticalalignment = 'center',
-                         color = 'w')
-
-    plt.yticks(np.arange(0.5, len(data.index), 1), data.index)
-    plt.xticks(np.arange(0.5, len(data.columns), 1), data.columns)
-
-    plt.show()
-
-#------------------------------------------------------------------------------
-def plot_NAV_curve(port_return_df):
-    i = np.argmax(port_return_df['drawdown'])
-    j = np.argmax(port_return_df['NAV'][:i])
-
-    figure = plt.figure()
-    ax = figure.add_subplot(111)
-    ax.plot(port_return_df['NAV'])
-    plt.plot([i, j], 
-             [port_return_df['NAV'][i], port_return_df['NAV'][j]], 
-             'o', color = 'Red', markersize = 8)
-
-    ax2 = ax.twinx()
-    ax2.bar(port_return_df.index, port_return_df['drawdown'], color = 'g')
+def industry_demean_return(return_df, industry_dict, 
+                           industry_neutral_list = [], 
+                           if_all_industry = True): 
+    total_industry_demean_df = return_df.copy()
     
-#------------------------------------------------------------------------------
-def draw_acf_pacf(ts, lags = 31):
-    f = plt.figure(facecolor = 'white')
-    ax1 = f.add_subplot(211)
-    plot_acf(ts, lags = lags, ax = ax1)
-    ax2 = f.add_subplot(212)
-    plot_pacf(ts, lags = lags, ax = ax2)
-    plt.show()
-
-#------------------------------------------------------------------------------
-def plot_monthly_return_distribution(port_return_df, after_cost = False):
-    '''
-    This function is used for plotting the monthly distribution of the 
-    portrolio return. The return after or before transaction cost could 
-    be chosen.
-    The portfolio return DataFrame must be the typical port_return_df, and 
-    the variable after_cost is a bool that could be chosen among True or False.
-    '''
-
-    if after_cost:
-        return_var = 'net_port_return'
+    if if_all_industry:
+        for key,value in industry_dict.items():
+            industry_df = return_df[value]
+            industry_demean_df = industry_df.sub(
+                industry_df.mean(axis = 1), axis = 0)
+            total_industry_demean_df[value] = industry_demean_df
     else:
-        return_var = 'port_return'
+        if industry_neutral_list == []:
+            print 'Please provide industry list!'
+        else:
+            for key in industry_neutral_list:
+                if key in industry_dict.keys():
+                    value = industry_dict[key]
+                    industry_df = return_df[value]
+                    industry_demean_df = industry_df.sub(
+                        industry_df.mean(axis = 1), axis = 0)
+                    total_industry_demean_df[value] = industry_demean_df
+                else:
+                    print 'Industry not in industry_dict!'
 
-    month_return = port_return_df[return_var].groupby(
-        pd.Grouper(freq = 'M')).sum()
-
-    month = month_return.index.month
-    year = month_return.index.year
-
-    month_return.index = pd.MultiIndex.from_tuples(list(zip(month, year)))
-    month_return.unstack().plot(kind = 'bar', title = 'Average Monthly Return')
-
-    plt.show()
-
-
-###############################################################################
-###############################################################################
-# Regression related
-#------------------------------------------------------------------------------
-def hedge_ratio(y, x, add_const = True):
-    if add_const:
-        x = sm.add_constant(x)
-        model = sm.OLS(y, x).fit()
-        return model.params[1]
-    model = sm.OLS(y, x).fit()
-    return model.params.values
+    return total_industry_demean_df
 
 #------------------------------------------------------------------------------
-def OLSReg(X1,Y):
-    # Run the linear regression with only one independent variable.
-    X = sm.add_constant(X1)
-    model = regression.linear_model.OLS(Y, X).fit()
-    alpha, beta1 = model.params
-    return alpha, beta1
+def get_liquid_multiindex_data(data_df, liquid_contract_df):
+    liquid_data_df = data_df.copy()
+
+    for column in liquid_contract_df.columns:
+        if column in liquid_data_df.columns.get_level_values(1):
+            not_liquid_index = (
+                liquid_contract_df.loc[
+                    liquid_contract_df.loc[liquid_data_df.index, column] == 0, 
+                    column].index)
+            liquid_data_df.loc[
+                not_liquid_index, 
+                liquid_data_df.columns.get_level_values(1) == column] = np.nan
+
+    return liquid_data_df
+
+#------------------------------------------------------------------------------
+def get_liquid_contract_data(data_df, liquid_contract_df):
+    liquid_data_df = data_df.copy()
+
+    for column in liquid_contract_df.columns:
+        if column in liquid_data_df.columns:
+            liquid_data_df.loc[:, column] = np.where(
+                liquid_contract_df.loc[
+                    liquid_data_df.index, column] == 0, 
+                np.nan, liquid_data_df.loc[:, column])
+    
+    return liquid_data_df
+
+#------------------------------------------------------------------------------
+def filter_extreme_MAD(factor_df, n):
+    median = factor_df.median(axis = 1)
+    new_median = factor_df.sub(
+        median, axis = 0).abs().median(axis = 1)
+
+    max_range = median + n * new_median
+    min_range = median - n * new_median
+
+    processed_factor = factor_df.copy()
+    for date in processed_factor.index:
+        processed_factor.loc[date] = np.clip(
+            processed_factor.loc[date], 
+            min_range.loc[date], max_range.loc[date])
+
+    return processed_factor
+
+#------------------------------------------------------------------------------
+def panel_data_standardization(df):
+    df = df.sub(
+        df.mean(axis = 1), axis = 0).div(
+        df.std(axis = 1), axis = 0)
+    
+    return df
+
+#------------------------------------------------------------------------------
+def panel_data_demean(df):
+    df = df.sub(df.mean(axis = 1), axis = 0)
+    
+    return df
+
+#------------------------------------------------------------------------------
+def cs_to_panel_data_transformation(df, var_name):
+    df = pd.DataFrame(df.unstack(0))
+    df.columns = [var_name]
+
+    return df
+
+#------------------------------------------------------------------------------
+def cs_to_panel_data_standardization(df, var_name):
+    df = df.sub(
+        df.mean(axis = 1), axis = 0).div(
+        df.std(axis = 1), axis = 0)
+
+    df = pd.DataFrame(df.unstack(0))
+    df.columns = [var_name]
+
+    return df
+
+#------------------------------------------------------------------------------
+def cs_to_panel_data_demean(df, var_name):
+    df = df.sub(df.mean(axis = 1), axis = 0)
+    df = pd.DataFrame(df.unstack(0))
+    df.columns = [var_name]
+
+    return df
+
+#------------------------------------------------------------------------------
+def rolling_standardize(data, series_var, window = 20):
+    series_mean = data[series_var].rolling(window = window).mean()
+    series_std = data[series_var].rolling(window = window).std()
+    standardized_series = (data[series_var] - series_mean) / series_std
+    return standardized_series
+
+#------------------------------------------------------------------------------
+def rolling_normalization(data, series_var, window = 20):
+    series_max = data[series_var].rolling(window = window).max()
+    series_min = data[series_var].rolling(window = window).min()
+    normalized_series = ((data[series] - series_min) 
+                         / (series_max - series_min))
+    return normalized_series
+
+#------------------------------------------------------------------------------
+def forward_feature_selection(model_data, dep_var, standard):
+    model_df = model_data
+    response = dep_var
+    standard = standard
+
+    remaining = set(model_df.columns)
+    remaining.remove(response)
+    selected = []
+    current_score, best_new_score = 0.0, 0.0
+    while remaining: 
+        scores_with_candidates = []
+        for candidate in remaining:
+
+            X1 = model_df[selected + [candidate]]
+            X = sm.add_constant(X1)
+            Y = model_df[response]
+            model = regression.linear_model.OLS(Y, X).fit()
+
+            if standard == 'rsquared_adj':
+                score = model.rsquared_adj
+            
+            if standard == 'aic':
+                score = -model.aic
+                
+            if standard == 'bic':
+                score = -model.bic
+
+            scores_with_candidates.append((score, candidate))
+        scores_with_candidates.sort()
+        best_new_score, best_candidate = scores_with_candidates.pop()
+        if current_score < best_new_score:
+            selected.append(best_candidate)
+            current_score = best_new_score
+        remaining.remove(best_candidate)
+    
+    return selected
+
+#------------------------------------------------------------------------------
+def backward_feature_selection(model_data, dep_var, standard):
+    model_df = model_data
+    response = dep_var
+    standard = standard
+
+    remaining = list(set(model_df.columns))
+    remaining.remove(response)
+
+    current_score, best_new_score = 0.0, 0.0
+    keep = True
+    
+    while keep: 
+        scores_with_candidates = []
+        temp_remaining = copy.copy(remaining)
+        for candidate in temp_remaining:
+            keep_candidate = copy.copy(temp_remaining)
+            keep_candidate.remove(candidate)
+
+            X1 = model_df[keep_candidate]
+            X = sm.add_constant(X1)
+            Y = model_df[response]
+            model = regression.linear_model.OLS(Y, X).fit()
+
+            if standard == 'rsquared_adj':
+                score = model.rsquared_adj
+            
+            if standard == 'aic':
+                score = -model.aic
+                
+            if standard == 'bic':
+                score = -model.bic
+
+            scores_with_candidates.append((score, candidate))
+        scores_with_candidates.sort()
+        best_new_score, best_candidate = scores_with_candidates.pop()
+        if current_score < best_new_score:
+            remaining.remove(best_candidate)
+            current_score = best_new_score
+        else:
+            keep = False
+    
+    return remaining
+
+#------------------------------------------------------------------------------
+def preprocess_tick_data(data, if_night, day_start_time, day_end_time, 
+                         night_start_time = None, night_end_time = None):
+    use_df = data.loc[:, ['交易日', '合约代码', '最新价', '数量', 
+                          '成交金额', '持仓量', '最后修改时间', '最后修改毫秒', 
+                          '申卖价一', '申卖量一', 
+                          '申买价一', '申买量一']].copy()
+    use_df.columns = ['tradingday', 'symbol', 'last_price', 'volume', 
+                      'turnover', 'openint', 'time', 'second', 
+                      'ask_price1', 'ask_volume1', 
+                      'bid_price1', 'bid_volume1']
+
+    # Drop the observations where either the bid price or the ask price is 0.
+    # These cases indicate either there are data errors or the contract price 
+    # reach the stop price.
+    use_df = use_df.loc[
+        (use_df['bid_price1'] != 0.0) & (use_df['ask_price1'] != 0.0), :]
+
+    use_df['mid_price'] = (use_df['bid_price1'] + use_df['ask_price1']) / 2
+
+    use_df = use_df.reset_index(drop = True)
+
+    if if_night:
+        use_df = use_df.loc[
+            (((use_df['time'] >= night_start_time) 
+              & (use_df['time'] <= night_end_time))
+             | ((use_df['time'] >= day_start_time) 
+                & (use_df['time'] <= day_end_time))), :]
+    else:
+        use_df = use_df.loc[
+            ((use_df['time'] >= day_start_time) 
+             & (use_df['time'] <= day_end_time)), :]
+
+    use_df = use_df.sort_index().reset_index(drop = True)
+
+    use_df['second_rank'] = np.where(
+        use_df['time'] == use_df['time'].shift(), 2, 1)
+
+    use_df['datetime'] = (use_df['tradingday'].map(str) + ' ' 
+                          + use_df['time'].map(str) + ' ' 
+                          + use_df['second_rank'].map(str))
+    use_df = use_df.reset_index(drop = True).set_index('datetime')
+
+    use_df = use_df[['symbol', 'last_price', 'volume', 'turnover', 
+                     'openint', 'ask_price1', 'ask_volume1', 
+                     'bid_price1', 'bid_volume1', 'mid_price']]
+
+    return use_df
 
 
 ###############################################################################
@@ -544,6 +687,118 @@ def normal_rolling_model_building(
         'prediction_df': dummy_prediction_df}
 
     return result_dict
+
+#------------------------------------------------------------------------------
+def rolling_model_building_with_industry_neutral(
+    pv_feature_df, close_df, 
+    target_vars, ind_vars, 
+    prediction_size, liquid_contract_df, 
+    training_date_list, backtest_date_list, 
+    industry_dict, industry_neutral_list = [], 
+    if_all_industry = True, 
+    rolling_params = False, print_dates = False):
+
+    dummy_model_list = []
+    dummy_factor_return_df = pd.DataFrame()
+    dummy_factor_return_t_value_df = pd.DataFrame()
+    dummy_prediction_df = pd.DataFrame()
+    trading_commodity_list = pv_feature_df.index.levels[0]
+
+    for i in range(0, len(backtest_date_list)-1):
+        #----------------------------------------------------------------------
+        # cross-sectional estimation
+        panel_start_date = training_date_list[i][0]
+        panel_end_date = training_date_list[i][1]
+
+        #----------------------------------------------------------------------
+        # Build the DataFrame containing all the features.
+        model_use_df = pv_feature_df.loc[
+            (slice(None), slice(panel_start_date, panel_end_date)), ind_vars]
+
+        #----------------------------------------------------------------------
+        model_close_df = close_df.loc[panel_start_date:panel_end_date, 
+                                      trading_commodity_list]
+        model_return_df = pd.DataFrame(
+            (np.log(model_close_df.shift(-prediction_size))
+             - np.log(model_close_df)))
+
+        model_return_df = get_liquid_contract_data(
+            model_return_df, liquid_contract_df)
+
+        # Remove the industry mean return from the individual commodities.
+        model_return_df = industry_demean_return(
+            model_return_df, industry_dict, 
+            industry_neutral_list = industry_neutral_list, 
+            if_all_industry = if_all_industry)
+
+        # Use original return as the dependent variable.
+        model_original_return_df = pd.DataFrame(
+            model_return_df.unstack(0), columns = ['original_return'])
+
+        #----------------------------------------------------------------------
+        final_model_df = pd.concat(
+            [model_use_df, model_original_return_df], axis = 1)
+        final_model_df = final_model_df.dropna()
+
+        dep_var = 'original_return'
+        mod_ind_vars = [ele for ele in final_model_df.columns 
+                        if ele != dep_var]
+
+        X = sm.add_constant(final_model_df[mod_ind_vars].astype(np.float64))
+        Y = final_model_df[dep_var].astype(np.float64)
+
+        model = regression.linear_model.OLS(Y, X).fit()
+
+        dummy_model_list.append(model)
+
+        temp_factor_return_df = pd.DataFrame(model.params).T
+        temp_factor_return_df['start_date'] = panel_start_date
+        temp_factor_return_df['end_date'] = panel_end_date
+        dummy_factor_return_df = pd.concat(
+            [dummy_factor_return_df, temp_factor_return_df])
+
+        temp_factor_return_t_value_df = pd.DataFrame(model.tvalues).T
+        temp_factor_return_t_value_df['start_date'] = panel_start_date
+        temp_factor_return_t_value_df['end_date'] = panel_end_date
+        dummy_factor_return_t_value_df = pd.concat(
+            [dummy_factor_return_t_value_df, temp_factor_return_t_value_df])
+
+        #----------------------------------------------------------------------
+        test_start_date = backtest_date_list[i+1][0]
+        test_end_date = backtest_date_list[i+1][1]
+
+        if print_dates:
+            print 'training: ', panel_start_date, panel_end_date
+            print 'testing: ', test_start_date, test_end_date
+
+        test_df = pv_feature_df.loc[
+            (slice(None), slice(test_start_date, test_end_date)), mod_ind_vars]
+        
+        #----------------------------------------------------------------------
+        if rolling_params: 
+            prediction_df = pd.DataFrame(
+                test_df[target_vars].multiply(
+                    dummy_factor_return_df[target_vars].ewm(
+                        span = 5).mean().tail(1).loc[0, :]).sum(
+                            axis = 1, skipna = False), 
+                columns = ['prediction'])
+        else: 
+            prediction_df = pd.DataFrame(
+                test_df[target_vars].multiply(
+                    model.params[target_vars]).sum(axis = 1, skipna = False),
+                columns = ['prediction'])
+
+        dummy_prediction_df = pd.concat(
+            [dummy_prediction_df, prediction_df.unstack(0)], axis = 0)
+
+    result_dict = {
+        'model_list': dummy_model_list, 
+        'factor_return_df': dummy_factor_return_df, 
+        'factor_return_t_value_df': dummy_factor_return_t_value_df, 
+        'prediction_df': dummy_prediction_df}
+
+    return result_dict
+
 
 
 ###############################################################################
@@ -818,6 +1073,106 @@ def factor_quantile_test(feature_df, intraday_return_df, interday_return_df):
 
 ###############################################################################
 ###############################################################################
+# Plot
+#------------------------------------------------------------------------------
+def plot_heatmap(data, title = 'Heatmap', show_legend = True,
+                 show_labels = True, label_fmt = '.2f',
+                 vmin = None, vmax = None, figsize = None,
+                 cmap = 'RdYlGn_r', **kwargs):
+    """
+    Plot a heatmap using matplotlib's pcolor.
+
+    Args:
+        * data (DataFrame): DataFrame to plot. Usually small matrix (ex.
+            correlation matrix).
+        * title (string): Plot title
+        * show_legend (bool): Show color legend
+        * show_labels (bool): Show value labels
+        * label_fmt (str): Label format string
+        * vmin (float): Min value for scale
+        * vmax (float): Max value for scale
+        * cmap (string): Color map  cmap='RdYlGn_r' or  'RdBu'
+        * kwargs: Passed to matplotlib's pcolor
+
+    """
+    fig, ax = plt.subplots(figsize = figsize)
+
+    heatmap = ax.pcolor(data, vmin = vmin, vmax = vmax, cmap = cmap)
+    # for some reason heatmap has the y values backwards....
+    ax.invert_yaxis()
+
+    plt.title(title)
+
+    if show_legend:
+        fig.colorbar(heatmap)
+
+    if show_labels:
+        vals = data.values
+        for x in range(data.shape[0]):
+            for y in range(data.shape[1]):
+                plt.text(y + 0.5, x + 0.5, format(vals[x, y], label_fmt),
+                         horizontalalignment = 'center',
+                         verticalalignment = 'center',
+                         color = 'w')
+
+    plt.yticks(np.arange(0.5, len(data.index), 1), data.index)
+    plt.xticks(np.arange(0.5, len(data.columns), 1), data.columns)
+
+    plt.show()
+
+#------------------------------------------------------------------------------
+def plot_NAV_curve(port_return_df):
+    i = np.argmax(port_return_df['drawdown'])
+    j = np.argmax(port_return_df['NAV'][:i])
+
+    figure = plt.figure()
+    ax = figure.add_subplot(111)
+    ax.plot(port_return_df['NAV'])
+    plt.plot([i, j], 
+             [port_return_df['NAV'][i], port_return_df['NAV'][j]], 
+             'o', color = 'Red', markersize = 8)
+
+    ax2 = ax.twinx()
+    ax2.bar(port_return_df.index, port_return_df['drawdown'], color = 'g')
+    
+#------------------------------------------------------------------------------
+def draw_acf_pacf(ts, lags = 31):
+    f = plt.figure(facecolor = 'white')
+    ax1 = f.add_subplot(211)
+    plot_acf(ts, lags = lags, ax = ax1)
+    ax2 = f.add_subplot(212)
+    plot_pacf(ts, lags = lags, ax = ax2)
+    plt.show()
+
+#------------------------------------------------------------------------------
+def plot_monthly_return_distribution(port_return_df, after_cost = False):
+    '''
+    This function is used for plotting the monthly distribution of the 
+    portrolio return. The return after or before transaction cost could 
+    be chosen.
+    The portfolio return DataFrame must be the typical port_return_df, and 
+    the variable after_cost is a bool that could be chosen among True or False.
+    '''
+
+    if after_cost:
+        return_var = 'net_port_return'
+    else:
+        return_var = 'port_return'
+
+    month_return = port_return_df[return_var].groupby(
+        pd.Grouper(freq = 'M')).sum()
+
+    month = month_return.index.month
+    year = month_return.index.year
+
+    month_return.index = pd.MultiIndex.from_tuples(list(zip(month, year)))
+    month_return.unstack().plot(kind = 'bar', title = 'Average Monthly Return')
+
+    plt.show()
+
+
+###############################################################################
+###############################################################################
 # Statistical Tests
 #------------------------------------------------------------------------------
 '''
@@ -843,243 +1198,6 @@ def breush_pagan_test(model):
             'f-value', 'f p-value']
     test = sms.het_breushpagan(model.resid, model.model.exog)
     return lzip(name, test)
-
-
-###############################################################################
-###############################################################################
-# Data Preprocess
-#------------------------------------------------------------------------------
-def get_liquid_multiindex_data(data_df, liquid_contract_df):
-    liquid_data_df = data_df.copy()
-
-    for column in liquid_contract_df.columns:
-        if column in liquid_data_df.columns.get_level_values(1):
-            not_liquid_index = (
-                liquid_contract_df.loc[
-                    liquid_contract_df.loc[liquid_data_df.index, column] == 0, 
-                    column].index)
-            liquid_data_df.loc[
-                not_liquid_index, 
-                liquid_data_df.columns.get_level_values(1) == column] = np.nan
-
-    return liquid_data_df
-
-
-#------------------------------------------------------------------------------
-def get_liquid_contract_data(data_df, liquid_contract_df):
-    liquid_data_df = data_df.copy()
-
-    for column in liquid_contract_df.columns:
-        if column in liquid_data_df.columns:
-            liquid_data_df.loc[:, column] = np.where(
-                liquid_contract_df.loc[
-                    liquid_data_df.index, column] == 0, 
-                np.nan, liquid_data_df.loc[:, column])
-    
-    return liquid_data_df
-
-#------------------------------------------------------------------------------
-def filter_extreme_MAD(factor_df, n):
-    median = factor_df.median(axis = 1)
-    new_median = factor_df.sub(
-        median, axis = 0).abs().median(axis = 1)
-
-    max_range = median + n * new_median
-    min_range = median - n * new_median
-
-    processed_factor = factor_df.copy()
-    for date in processed_factor.index:
-        processed_factor.loc[date] = np.clip(
-            processed_factor.loc[date], 
-            min_range.loc[date], max_range.loc[date])
-
-    return processed_factor
-
-#------------------------------------------------------------------------------
-def panel_data_standardization(df):
-    df = df.sub(
-        df.mean(axis = 1), axis = 0).div(
-        df.std(axis = 1), axis = 0)
-    
-    return df
-
-#------------------------------------------------------------------------------
-def panel_data_demean(df):
-    df = df.sub(df.mean(axis = 1), axis = 0)
-    
-    return df
-
-#------------------------------------------------------------------------------
-def cs_to_panel_data_transformation(df, var_name):
-    df = pd.DataFrame(df.unstack(0))
-    df.columns = [var_name]
-
-    return df
-
-#------------------------------------------------------------------------------
-def cs_to_panel_data_standardization(df, var_name):
-    df = df.sub(
-        df.mean(axis = 1), axis = 0).div(
-        df.std(axis = 1), axis = 0)
-
-    df = pd.DataFrame(df.unstack(0))
-    df.columns = [var_name]
-
-    return df
-
-#------------------------------------------------------------------------------
-def cs_to_panel_data_demean(df, var_name):
-    df = df.sub(df.mean(axis = 1), axis = 0)
-    df = pd.DataFrame(df.unstack(0))
-    df.columns = [var_name]
-
-    return df
-
-#------------------------------------------------------------------------------
-def rolling_standardize(data, series_var, window = 20):
-    series_mean = data[series_var].rolling(window = window).mean()
-    series_std = data[series_var].rolling(window = window).std()
-    standardized_series = (data[series_var] - series_mean) / series_std
-    return standardized_series
-
-#------------------------------------------------------------------------------
-def rolling_normalization(data, series_var, window = 20):
-    series_max = data[series_var].rolling(window = window).max()
-    series_min = data[series_var].rolling(window = window).min()
-    normalized_series = ((data[series] - series_min) 
-                         / (series_max - series_min))
-    return normalized_series
-
-#------------------------------------------------------------------------------
-def forward_feature_selection(model_data, dep_var, standard):
-    model_df = model_data
-    response = dep_var
-    standard = standard
-
-    remaining = set(model_df.columns)
-    remaining.remove(response)
-    selected = []
-    current_score, best_new_score = 0.0, 0.0
-    while remaining: 
-        scores_with_candidates = []
-        for candidate in remaining:
-
-            X1 = model_df[selected + [candidate]]
-            X = sm.add_constant(X1)
-            Y = model_df[response]
-            model = regression.linear_model.OLS(Y, X).fit()
-
-            if standard == 'rsquared_adj':
-                score = model.rsquared_adj
-            
-            if standard == 'aic':
-                score = -model.aic
-                
-            if standard == 'bic':
-                score = -model.bic
-
-            scores_with_candidates.append((score, candidate))
-        scores_with_candidates.sort()
-        best_new_score, best_candidate = scores_with_candidates.pop()
-        if current_score < best_new_score:
-            selected.append(best_candidate)
-            current_score = best_new_score
-        remaining.remove(best_candidate)
-    
-    return selected
-
-#------------------------------------------------------------------------------
-def backward_feature_selection(model_data, dep_var, standard):
-    model_df = model_data
-    response = dep_var
-    standard = standard
-
-    remaining = list(set(model_df.columns))
-    remaining.remove(response)
-
-    current_score, best_new_score = 0.0, 0.0
-    keep = True
-    
-    while keep: 
-        scores_with_candidates = []
-        temp_remaining = copy.copy(remaining)
-        for candidate in temp_remaining:
-            keep_candidate = copy.copy(temp_remaining)
-            keep_candidate.remove(candidate)
-
-            X1 = model_df[keep_candidate]
-            X = sm.add_constant(X1)
-            Y = model_df[response]
-            model = regression.linear_model.OLS(Y, X).fit()
-
-            if standard == 'rsquared_adj':
-                score = model.rsquared_adj
-            
-            if standard == 'aic':
-                score = -model.aic
-                
-            if standard == 'bic':
-                score = -model.bic
-
-            scores_with_candidates.append((score, candidate))
-        scores_with_candidates.sort()
-        best_new_score, best_candidate = scores_with_candidates.pop()
-        if current_score < best_new_score:
-            remaining.remove(best_candidate)
-            current_score = best_new_score
-        else:
-            keep = False
-    
-    return remaining
-
-#------------------------------------------------------------------------------
-def preprocess_tick_data(data, if_night, day_start_time, day_end_time, 
-                         night_start_time = None, night_end_time = None):
-    use_df = data.loc[:, ['交易日', '合约代码', '最新价', '数量', 
-                          '成交金额', '持仓量', '最后修改时间', '最后修改毫秒', 
-                          '申卖价一', '申卖量一', 
-                          '申买价一', '申买量一']].copy()
-    use_df.columns = ['tradingday', 'symbol', 'last_price', 'volume', 
-                      'turnover', 'openint', 'time', 'second', 
-                      'ask_price1', 'ask_volume1', 
-                      'bid_price1', 'bid_volume1']
-
-    # Drop the observations where either the bid price or the ask price is 0.
-    # These cases indicate either there are data errors or the contract price 
-    # reach the stop price.
-    use_df = use_df.loc[
-        (use_df['bid_price1'] != 0.0) & (use_df['ask_price1'] != 0.0), :]
-
-    use_df['mid_price'] = (use_df['bid_price1'] + use_df['ask_price1']) / 2
-
-    use_df = use_df.reset_index(drop = True)
-
-    if if_night:
-        use_df = use_df.loc[
-            (((use_df['time'] >= night_start_time) 
-              & (use_df['time'] <= night_end_time))
-             | ((use_df['time'] >= day_start_time) 
-                & (use_df['time'] <= day_end_time))), :]
-    else:
-        use_df = use_df.loc[
-            ((use_df['time'] >= day_start_time) 
-             & (use_df['time'] <= day_end_time)), :]
-
-    use_df = use_df.sort_index().reset_index(drop = True)
-
-    use_df['second_rank'] = np.where(
-        use_df['time'] == use_df['time'].shift(), 2, 1)
-
-    use_df['datetime'] = (use_df['tradingday'].map(str) + ' ' 
-                          + use_df['time'].map(str) + ' ' 
-                          + use_df['second_rank'].map(str))
-    use_df = use_df.reset_index(drop = True).set_index('datetime')
-
-    use_df = use_df[['symbol', 'last_price', 'volume', 'turnover', 
-                     'openint', 'ask_price1', 'ask_volume1', 
-                     'bid_price1', 'bid_volume1', 'mid_price']]
-
-    return use_df
 
 
 ###############################################################################
@@ -1125,6 +1243,27 @@ def GS_orthogonalize(model_df, ind_vars):
         orthogonalized_ind_vars[temp_dep_var] = orthogonalized_temp_dep_var
 
     return orthogonalized_ind_vars
+
+
+###############################################################################
+###############################################################################
+# Regression related
+#------------------------------------------------------------------------------
+def hedge_ratio(y, x, add_const = True):
+    if add_const:
+        x = sm.add_constant(x)
+        model = sm.OLS(y, x).fit()
+        return model.params[1]
+    model = sm.OLS(y, x).fit()
+    return model.params.values
+
+#------------------------------------------------------------------------------
+def OLSReg(X1,Y):
+    # Run the linear regression with only one independent variable.
+    X = sm.add_constant(X1)
+    model = regression.linear_model.OLS(Y, X).fit()
+    alpha, beta1 = model.params
+    return alpha, beta1
 
 
 ###############################################################################
