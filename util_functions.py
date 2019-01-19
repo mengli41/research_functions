@@ -278,6 +278,22 @@ def read_tick_data_from_sql(contract_type, date_start, date_end, iprint = 0):
 
     return df
 
+#------------------------------------------------------------------------------
+def read_daily_data_from_msg(data_address_str):
+    tmp = pd.read_msgpack(data_address_str)
+    tmp_df = tmp.to_frame()
+
+    tmp_df['close'] = tmp_df['close'] / tmp_df['adjustment']
+    tmp_df['open'] = tmp_df['open'] / tmp_df['adjustment']
+    tmp_df['low'] = tmp_df['low'] / tmp_df['adjustment']
+    tmp_df['high'] = tmp_df['high'] / tmp_df['adjustment']
+    tmp_df['vwap'] = tmp_df['vwap'] / tmp_df['adjustment']
+    tmp_df['amount'] = tmp_df['vwap'] * tmp_df['volume']
+
+    df = tmp_df.unstack(1)
+
+    return df
+
 
 ###############################################################################
 ###############################################################################
