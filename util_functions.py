@@ -279,6 +279,65 @@ def read_tick_data_from_sql(contract_type, date_start, date_end, iprint = 0):
     return df
 
 #------------------------------------------------------------------------------
+def read_macro_data_from_sql(
+    macro_table_name = 'macros', 
+    date_start = None, date_end = None, iprint = 0):
+
+    macro_db = create_engine(
+        'postgresql+psycopg2://limeng:123456@192.168.1.119/macro_data')
+
+    columns = ['trading_day as datetime', 'value', 'macro']
+    columns_place = ",".join(columns)
+    cmd = """select {0} from "{1}" """.format(columns_place, macro_table_name)
+
+    if date_start is not None:
+        cmd += "where trading_day>='{0}'".format(date_start)
+    if date_end is not None:
+        cmd += " and trading_day<='{0}'".format(date_end)
+    if iprint:
+        print(cmd)
+
+    macro_df = pd.read_sql(cmd, macro_db)
+    macro_df.datetime = pd.to_datetime(macro_df.datetime)
+
+    macro_df.set_index(['macro', 'datetime'], inplace = True)
+    macro_df.sort_index(level = 1, inplace = True, sort_remaining = True)
+    macro_df.index.names = ['macro', 'datetime']
+    macro_df = macro_df.unstack(0)['value']
+
+    return macro_df
+
+#------------------------------------------------------------------------------
+def read_macro_beta_from_sql(
+    database_name = 'us_ir_betas', 
+    date_start = None, date_end = None, iprint = 0):
+
+    db = create_engine(
+        'postgresql+psycopg2://limeng:123456@192.168.1.119/comm_factors')
+
+    columns = ['trading_day as datetime', 'symboltype', 'value', 'label']
+    columns_place = ",".join(columns)
+
+    cmd = """select {0} from "{1}" """.format(
+        columns_place, database_name)
+
+    if date_start is not None:
+        cmd += "where trading_day>='{0}'".format(date_start)
+    if date_end is not None:
+        cmd += " and trading_day<='{0}'".format(date_end)
+    if iprint:
+        print(cmd)
+
+    df = pd.read_sql(cmd, db)
+
+    df.set_index(['label', 'symboltype', 'datetime'], inplace = True)
+    df.sort_index(level = 1, inplace = True, sort_remaining = True)
+    df.index.names = ['label', 'symbol', 'datetime']
+    df = df.unstack(0).unstack(0)['value']
+
+    return df
+
+#------------------------------------------------------------------------------
 def read_daily_data_from_msg(data_address_str):
     tmp = pd.read_msgpack(data_address_str)
     tmp_df = tmp.to_frame()
