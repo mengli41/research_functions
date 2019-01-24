@@ -1319,6 +1319,50 @@ def GS_orthogonalize(model_df, ind_vars):
 
     return orthogonalized_ind_vars
 
+#------------------------------------------------------------------------------
+def GS_orthogonalize_v2(model_df, ind_vars):
+    '''
+    This function use the Gram-Schmidt algorithm to commit the factor 
+    orthogonalization procedure.
+    It should be noted that the independent variables (ind_vars) should be 
+    ordered outside of this function, otherwise the orthogonalizing order 
+    would be random.
+    '''
+    orthogonalized_ind_vars = pd.DataFrame()
+    orthogonalized_ind_vars[ind_vars[0]] = model_df[ind_vars[0]]
+
+    for i in range(1, len(ind_vars)):
+        temp_dep_var = ind_vars[i]
+        temp_ind_var = ind_vars[0:i]
+    
+        temp_dep_var_beta_dict = {}
+    
+        temp_model_df = pd.DataFrame()
+        temp_model_df[temp_dep_var] = model_df[temp_dep_var]
+    
+        orthogonalized_temp_dep_var = model_df[temp_dep_var]
+    
+        for orth_column in temp_ind_var:
+            temp_model_df[orth_column] = orthogonalized_ind_vars[orth_column]
+            temp_model_df = temp_model_df.dropna()
+        
+            y = np.array(temp_model_df.loc[:, temp_dep_var])
+            x = np.array(temp_model_df.loc[:, orth_column])
+            x = x.reshape((len(x), 1))
+
+            beta = np.linalg.inv(x.T.dot(x)).dot(x.T).dot(y)
+
+            orthogonalized_temp_dep_var = (
+                orthogonalized_temp_dep_var 
+                - x.dot(beta))
+#                - orthogonalized_ind_vars[orth_column].dot(beta))
+        
+        orthogonalized_ind_vars[temp_dep_var] = (
+            orthogonalized_temp_dep_var.reindex(
+                orthogonalized_temp_dep_var.index))
+
+    return orthogonalized_ind_vars
+
 
 ###############################################################################
 ###############################################################################
