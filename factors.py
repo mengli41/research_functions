@@ -28,16 +28,17 @@ class IndustryClassification:
             'Metal': ['cu', 'zn', 'al', 'ni', 'pb', 'sn', 'au', 'ag'], 
             'BlackChain': ['rb', 'j', 'i', 'jm', 'hc', 'SM', 'SF'], 
             'EnergyChem': ['l', 'MA', 'pp', 'TA', 'ru', 'bu', 'v', 
-                           'sc', 'ZC', 'FG'], 
-            'Agri': ['CF', 'SR', 'a', 'm', 'RM', 'y', 'p', 'OI', 'cs', 'c'], 
-            'SoftComm': ['jd', 'AP']}
+                           'sc', 'ZC', 'FG', 'eg'], 
+            'Agri': ['CF', 'SR', 'a', 'm', 'RM', 'y', 'p', 
+                     'OI', 'cs', 'c', 'b'], 
+            'SoftComm': ['jd', 'AP', 'sp']}
 
         self.industry_class_3 = {
             'Indust': ['cu', 'zn', 'al', 'ni', 'pb', 'sn', 'au', 'ag', 'rb', 
                        'j', 'i', 'jm', 'hc', 'SM', 'SF', 'FG', 'l', 'MA', 
-                       'pp', 'TA', 'ru', 'bu', 'v', 'sc', 'ZC'], 
+                       'pp', 'TA', 'ru', 'bu', 'v', 'sc', 'ZC', 'eg', 'sp'], 
             'Agri': ['a', 'm', 'RM', 'y', 'p', 'OI', 'cs', 'c', 'CF', 
-                     'SR', 'jd', 'AP']}
+                     'SR', 'jd', 'AP', 'b']}
 
         self.financial_futures = {
             'Index': ['IF', 'IH', 'IC'], 
