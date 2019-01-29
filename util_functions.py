@@ -1145,6 +1145,72 @@ def factor_quantile_test(feature_df, intraday_return_df, interday_return_df):
 
     return quantile_port_return_dict, quantile_sharpe_dict
 
+#------------------------------------------------------------------------------
+class FactorQuantileTest:
+
+    #--------------------------------------------------------------------------
+    def __init__(self, feature_df):
+        self.feature_df = feature_df
+
+        self.quantile_feature_dict = {}
+        self.quantile_port_return_dict = {}
+        self.quantile_sharpe_dict = {}
+
+    #--------------------------------------------------------------------------
+    def __calculate_sharpe_ratio(self, return_series, risk_free_rate):
+        sharpe_ratio = ((return_series.mean() - risk_free_rate / 242.0) 
+                        / np.std(return_series) * np.sqrt(242.0))
+        return sharpe_ratio
+
+    #--------------------------------------------------------------------------
+    def generate_quantile_dict(self, quantile_num = 5, 
+                               feature_keyword = 'feature'):
+        test_feature_df = self.feature_df.dropna(axis = 0, how = 'all')
+        rank_df = test_feature_df.rank(axis = 1)
+        use_feature_rank = rank_df[rank_df.min(axis = 1) == 1]
+        self.dropped_dates = rank_df[rank_df.min(axis = 1) != 1].index
+
+        q_labels = ['{0}_q_{1}'.format(feature_keyword, str(i)) 
+                    for i in range(quantile_num)]
+        self.categorical_feature_df = use_feature_rank.transform(
+            lambda x: pd.qcut(x, quantile_num, labels=q_labels), axis = 1)
+
+        for q_label in q_labels:
+            q_dummy_df = 1 * (self.categorical_feature_df == q_label)
+            self.quantile_feature_dict[q_label] = q_dummy_df
+
+    #--------------------------------------------------------------------------
+    def factor_backtest(self, intraday_return_df, interday_return_df, 
+                        risk_free_rate = 0.0):
+        for key,value in self.quantile_feature_dict.items():
+            value_sum_df = value.abs().sum(axis = 1)
+            value_sum_df[value_sum_df == 0.0] = 1.0
+            pos_df = value.div(value_sum_df, axis = 0)
+            port_return_df = (
+                pos_df.shift().multiply(
+                    intraday_return_df.loc[pos_df.index])
+                + pos_df.shift(2).multiply(
+                    interday_return_df.loc[pos_df.index]))
+            port_return_df['port_return'] = port_return_df.sum(axis = 1)
+
+            self.quantile_port_return_dict[key] = port_return_df
+            self.quantile_sharpe_dict[key] = self.__calculate_sharpe_ratio(
+                port_return_df['port_return'], risk_free_rate)
+
+    #--------------------------------------------------------------------------
+    def plot_quantile_NAV(self):
+        for key,value in self.quantile_port_return_dict.items():
+            value['port_return'].cumsum().plot()
+        plt.legend(self.quantile_port_return_dict.keys())
+
+    #--------------------------------------------------------------------------
+    def plot_quantile_sharpe_dict(self):
+        plt.bar(range(len(self.quantile_sharpe_dict)), 
+                list(self.quantile_sharpe_dict.values()), 
+                align = 'center')
+        plt.xticks(range(len(self.quantile_sharpe_dict)), 
+                   list(self.quantile_sharpe_dict.keys()))
+
 
 ###############################################################################
 ###############################################################################
@@ -1388,6 +1454,50 @@ def OLSReg(X1,Y):
 ###############################################################################
 ###############################################################################
 # Estimation of Beta
+
+#------------------------------------------------------------------------------
+def beta_daily_rolling_estimation_with_lagged_inde_var(
+    close_return_df, macro_features_df, estimate_size, minimum_estimate_size):
+
+    '''
+    This Beta estimation method is from the [2013-DM]momentum_crashes[SSRN].
+    It uses the contemporaneous and lagged market returns as the 
+    independent variable, and fit a regression without constant. 
+    Then the Betas of every single independent variable are added together as 
+    the market Beta as the asset.
+    '''
+
+    N = close_return_df.shape[0]
+    date_list = [
+        [close_return_df.index[i-estimate_size+1], close_return_df.index[i]] 
+        for i in range(estimate_size-1, N)]
+
+    ind_var_num = len(macro_features_df.columns)
+    ind_vars = macro_features_df.columns
+
+    beta_df = pd.DataFrame(index = close_return_df.index[estimate_size:])
+
+    for dep_var in close_return_df.columns:
+        estimate_df = close_return_df[[dep_var]]
+        estimate_df = pd.concat([estimate_df, macro_features_df], axis = 1)
+        print estimate_df.tail()
+
+        for date_pair in date_list:
+            start_date = date_pair[0]
+            end_date = date_pair[1]
+
+            data_df = estimate_df.loc[start_date:end_date].dropna()
+            if data_df.shape[0] > minimum_estimate_size:
+                x = np.array(data_df.loc[:, [ind_vars]])
+                x = x.reshape((len(x), ind_var_num))
+                y = np.array(data_df.loc[:, dep_var])
+
+                beta = np.linalg.inv(x.T.dot(x)).dot(x.T).dot(y)
+                beta_df.loc[end_date, dep_var] = np.sum(beta)
+            else:
+                beta_df.loc[end_date, dep_var] = np.nan
+
+    return beta_df
 
 #------------------------------------------------------------------------------
 # Daily Rolling Estimation of Beta
