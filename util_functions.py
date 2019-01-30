@@ -1164,7 +1164,8 @@ class FactorQuantileTest:
 
     #--------------------------------------------------------------------------
     def generate_quantile_dict(self, quantile_num = 5, 
-                               feature_keyword = 'feature'):
+                               feature_keyword = 'feature', 
+                               include_market = False):
         test_feature_df = self.feature_df.dropna(axis = 0, how = 'all')
         rank_df = test_feature_df.rank(axis = 1)
         use_feature_rank = rank_df[rank_df.min(axis = 1) == 1]
@@ -1178,6 +1179,11 @@ class FactorQuantileTest:
         for q_label in q_labels:
             q_dummy_df = 1 * (self.categorical_feature_df == q_label)
             self.quantile_feature_dict[q_label] = q_dummy_df
+
+        if include_market:
+            # This is to calculate the equanlly weighted market mean return.
+            market_df = 1 * use_feature_rank.notnull()
+            self.quantile_feature_dict['market'] = market_df
 
     #--------------------------------------------------------------------------
     def factor_backtest(self, intraday_return_df, interday_return_df, 
@@ -1473,14 +1479,18 @@ def beta_daily_rolling_estimation_with_lagged_inde_var(
         for i in range(estimate_size-1, N)]
 
     ind_var_num = len(macro_features_df.columns)
-    ind_vars = macro_features_df.columns
+    ind_vars = list(macro_features_df.columns)
 
     beta_df = pd.DataFrame(index = close_return_df.index[estimate_size:])
+    total_estimate_df = pd.concat(
+        [close_return_df, macro_features_df], axis = 1)
 
     for dep_var in close_return_df.columns:
-        estimate_df = close_return_df[[dep_var]]
-        estimate_df = pd.concat([estimate_df, macro_features_df], axis = 1)
-        print estimate_df.tail()
+        print 'Start estimating market beta of {0}...'.format(dep_var)
+        estimate_df = total_estimate_df[[dep_var] + ind_vars]
+#        estimate_df = close_return_df[[dep_var]]
+#        estimate_df = pd.concat([estimate_df, macro_features_df], axis = 1)
+#        print estimate_df.tail()
 
         for date_pair in date_list:
             start_date = date_pair[0]
@@ -1488,7 +1498,7 @@ def beta_daily_rolling_estimation_with_lagged_inde_var(
 
             data_df = estimate_df.loc[start_date:end_date].dropna()
             if data_df.shape[0] > minimum_estimate_size:
-                x = np.array(data_df.loc[:, [ind_vars]])
+                x = np.array(data_df.loc[:, ind_vars])
                 x = x.reshape((len(x), ind_var_num))
                 y = np.array(data_df.loc[:, dep_var])
 
@@ -1496,6 +1506,8 @@ def beta_daily_rolling_estimation_with_lagged_inde_var(
                 beta_df.loc[end_date, dep_var] = np.sum(beta)
             else:
                 beta_df.loc[end_date, dep_var] = np.nan
+
+        print 'Done!'
 
     return beta_df
 
