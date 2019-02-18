@@ -365,23 +365,35 @@ def industry_demean_return(return_df, industry_dict,
     
     if if_all_industry:
         for key,value in industry_dict.items():
-            industry_df = return_df[value]
+            use_columns = [ele for ele in value if ele in return_df.columns]
+            industry_df = return_df[use_columns]
             industry_demean_df = industry_df.sub(
                 industry_df.mean(axis = 1), axis = 0)
-            total_industry_demean_df[value] = industry_demean_df
+            total_industry_demean_df[use_columns] = industry_demean_df
     else:
         if industry_neutral_list == []:
             print 'Please provide industry list!'
         else:
+            sep_demean_list = []
             for key in industry_neutral_list:
                 if key in industry_dict.keys():
                     value = industry_dict[key]
-                    industry_df = return_df[value]
+                    use_columns = [ele for ele in value 
+                                   if ele in return_df.columns]
+                    sep_demean_list += use_columns
+                    industry_df = return_df[use_columns]
                     industry_demean_df = industry_df.sub(
                         industry_df.mean(axis = 1), axis = 0)
-                    total_industry_demean_df[value] = industry_demean_df
+                    total_industry_demean_df[use_columns] = industry_demean_df
                 else:
                     print 'Industry not in industry_dict!'
+
+            combine_demean_list = [ele for ele in return_df.columns 
+                                   if ele not in sep_demean_list]
+            combine_industry_df = return_df[combine_demean_list]
+            combine_demean_df = combine_industry_df.sub(
+                combine_industry_df.mean(axis = 1), axis = 0)
+            total_industry_demean_df[combine_demean_list] = combine_demean_df
 
     return total_industry_demean_df
 
@@ -444,6 +456,135 @@ def panel_data_demean(df):
     df = df.sub(df.mean(axis = 1), axis = 0)
     
     return df
+
+#------------------------------------------------------------------------------
+def cs_to_panel_industry_standardization(df, industry_dict, var_name, 
+                                         industry_neutral_list = [], 
+                                         if_all_industry = True): 
+    total_industry_stan_df = df.copy()
+    
+    if if_all_industry:
+        for key,value in industry_dict.items():
+            use_columns = [ele for ele in value if ele in df.columns]
+            industry_df = df[use_columns]
+            industry_stan_df = industry_df.sub(
+                industry_df.mean(axis = 1), axis = 0).div(
+                    industry_df.std(axis = 1), axis = 0)
+            total_industry_stan_df[use_columns] = industry_stan_df
+    else:
+        if industry_neutral_list == []:
+            print 'Please provide industry list!'
+        else:
+            sep_stan_list = []
+            for key in industry_neutral_list:
+                if key in industry_dict.keys():
+                    value = industry_dict[key]
+                    use_columns = [ele for ele in value 
+                                   if ele in df.columns]
+                    sep_stan_list += use_columns
+                    industry_df = df[use_columns]
+                    industry_stan_df = industry_df.sub(
+                        industry_df.mean(axis = 1), axis = 0).div(
+                            industry_df.std(axis = 1), axis = 0)
+                    total_industry_stan_df[use_columns] = industry_stan_df
+                else:
+                    print 'Industry not in industry_dict!'
+
+            combine_stan_list = [ele for ele in df.columns 
+                                 if ele not in sep_stan_list]
+            combine_industry_df = df[combine_stan_list]
+            combine_stan_df = combine_industry_df.sub(
+                combine_industry_df.mean(axis = 1), axis = 0).div(
+                    combine_industry_df.std(axis = 1), axis = 0)
+            total_industry_stan_df[combine_stan_list] = combine_stan_df
+
+    panel_industry_stan_df = pd.DataFrame(total_industry_stan_df.unstack(0))
+    panel_industry_stan_df.columns = [var_name]
+
+    return panel_industry_stan_df
+
+#------------------------------------------------------------------------------
+def panel_industry_standardization(df, industry_dict, 
+                                   industry_neutral_list = [], 
+                                   if_all_industry = True): 
+    total_industry_stan_df = df.copy()
+    
+    if if_all_industry:
+        for key,value in industry_dict.items():
+            use_columns = [ele for ele in value if ele in df.columns]
+            industry_df = df[use_columns]
+            industry_stan_df = industry_df.sub(
+                industry_df.mean(axis = 1), axis = 0).div(
+                    industry_df.std(axis = 1), axis = 0)
+            total_industry_stan_df[use_columns] = industry_stan_df
+    else:
+        if industry_neutral_list == []:
+            print 'Please provide industry list!'
+        else:
+            sep_stan_list = []
+            for key in industry_neutral_list:
+                if key in industry_dict.keys():
+                    value = industry_dict[key]
+                    use_columns = [ele for ele in value 
+                                   if ele in df.columns]
+                    sep_stan_list += use_columns
+                    industry_df = df[use_columns]
+                    industry_stan_df = industry_df.sub(
+                        industry_df.mean(axis = 1), axis = 0).div(
+                            industry_df.std(axis = 1), axis = 0)
+                    total_industry_stan_df[use_columns] = industry_stan_df
+                else:
+                    print 'Industry not in industry_dict!'
+
+            combine_stan_list = [ele for ele in df.columns 
+                                 if ele not in sep_stan_list]
+            combine_industry_df = df[combine_stan_list]
+            combine_stan_df = combine_industry_df.sub(
+                combine_industry_df.mean(axis = 1), axis = 0).div(
+                    combine_industry_df.std(axis = 1), axis = 0)
+            total_industry_stan_df[combine_stan_list] = combine_stan_df
+
+    return total_industry_stan_df
+
+#------------------------------------------------------------------------------
+def panel_industry_demean(df, industry_dict, 
+                          industry_neutral_list = [], 
+                          if_all_industry = True): 
+    total_industry_demean_df = df.copy()
+    
+    if if_all_industry:
+        for key,value in industry_dict.items():
+            use_columns = [ele for ele in value if ele in df.columns]
+            industry_df = df[use_columns]
+            industry_demean_df = industry_df.sub(
+                industry_df.mean(axis = 1), axis = 0)
+            total_industry_demean_df[use_columns] = industry_demean_df
+    else:
+        if industry_neutral_list == []:
+            print 'Please provide industry list!'
+        else:
+            sep_demean_list = []
+            for key in industry_neutral_list:
+                if key in industry_dict.keys():
+                    value = industry_dict[key]
+                    use_columns = [ele for ele in value 
+                                   if ele in return_df.columns]
+                    sep_demean_list += use_columns
+                    industry_df = df[use_columns]
+                    industry_demean_df = industry_df.sub(
+                        industry_df.mean(axis = 1), axis = 0)
+                    total_industry_demean_df[use_columns] = industry_demean_df
+                else:
+                    print 'Industry not in industry_dict!'
+
+            combine_demean_list = [ele for ele in df.columns 
+                                   if ele not in sep_demean_list]
+            combine_industry_df = df[combine_demean_list]
+            combine_demean_df = combine_industry_df.sub(
+                combine_industry_df.mean(axis = 1), axis = 0)
+            total_industry_demean_df[combine_demean_list] = combine_demean_df
+
+    return total_industry_demean_df
 
 #------------------------------------------------------------------------------
 def cs_to_panel_data_transformation(df, var_name):
