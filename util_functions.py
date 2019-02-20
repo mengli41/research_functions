@@ -15,6 +15,7 @@ import matplotlib.dates as mdates
 import matplotlib.ticker as mticker
 import os, sys
 import copy
+import random
 
 from numpy import abs
 from collections import defaultdict
@@ -32,7 +33,8 @@ from statsmodels.tsa.stattools import adfuller
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 from statsmodels.tsa.arima_model import ARMA
 from statsmodels.tsa.seasonal import seasonal_decompose
-
+from itertools import combinations
+from itertools import product
 
 ###############################################################################
 ###############################################################################
@@ -1357,6 +1359,198 @@ class FactorQuantileTest:
                 align = 'center')
         plt.xticks(range(len(self.quantile_sharpe_dict)), 
                    list(self.quantile_sharpe_dict.keys()))
+
+#------------------------------------------------------------------------------
+def calculate_pbo_v1(return_df, target_var_name, n = 10, if_plot = False):
+    com_step = int(np.floor(return_df.shape[0] / float(n)))
+    date_list = list(return_df.index)
+
+    com_date_list = []
+    start_index = 0
+    while start_index < len(date_list):
+        end_index = min(len(date_list) - 1,
+                       start_index + com_step - 1)
+
+        start_date = date_list[start_index]
+        end_date = date_list[end_index]
+
+        com_date_list.append([start_date, end_date])
+
+        start_index += com_step
+
+    com_date_list = com_date_list[:n]
+
+    date_combination_list = [list(ele) for ele in combinations(range(n), 5)]
+
+    logit_list = []
+    in_out_sample_sr_list = []
+
+    for in_sample_com in date_combination_list:
+        out_sample_com = [ele for ele in range(n) if ele not in in_sample_com]
+
+        in_sample_return_df = pd.DataFrame()
+        out_sample_return_df = pd.DataFrame()
+
+        for com_num in in_sample_com:
+            in_sample_start_date = com_date_list[com_num][0]
+            in_sample_end_date = com_date_list[com_num][1]
+
+            tmp_in_sample_df = return_df.loc[
+                in_sample_start_date:in_sample_end_date]
+            in_sample_return_df = pd.concat(
+                [in_sample_return_df, tmp_in_sample_df])
+
+        for out_com_num in out_sample_com:
+            out_sample_start_date = com_date_list[out_com_num][0]
+            out_sample_end_date = com_date_list[out_com_num][1]
+
+            tmp_out_sample_df = return_df.loc[
+                out_sample_start_date:out_sample_end_date]
+            out_sample_return_df = pd.concat(
+                [out_sample_return_df, tmp_out_sample_df])
+
+        in_sample_sr_dict = defaultdict()
+        out_sample_sr_dict = defaultdict()
+
+        for column in in_sample_return_df.columns:
+            in_sample_sr_dict[column] = calculate_sharpe_ratio(
+                in_sample_return_df[column])
+            out_sample_sr_dict[column] = calculate_sharpe_ratio(
+                out_sample_return_df[column])
+
+        in_sample_sr_df = pd.DataFrame.from_dict(
+           in_sample_sr_dict, orient = 'index').T
+        out_sample_sr_df = pd.DataFrame.from_dict(
+           out_sample_sr_dict, orient = 'index').T
+
+    #     in_sample_optimal = (in_sample_sr_df.rank(axis = 1)
+    #                         / in_sample_sr_df.shape[1]).idxmax(axis = 1)[0]
+        in_sample_optimal = target_var_name
+
+        out_sample_rank = (
+           out_sample_sr_df.rank(axis = 1)
+           / out_sample_sr_df.shape[1]).loc[0, in_sample_optimal]
+
+        in_out_sample_sr_list.append([in_sample_sr_dict[in_sample_optimal],
+                                     out_sample_sr_dict[in_sample_optimal]])
+
+        logit_value = np.log(out_sample_rank / (1 - out_sample_rank))
+        if np.abs(logit_value) == np.inf:
+            logit_value = 4 * np.sign(logit_value)
+        logit_list.append(logit_value)
+        
+    pbo = len([ele for ele in logit_list if ele < 0]) / float(len(logit_list))
+
+    if if_plot:
+        plt.figure()
+        plt.scatter(x = [ele[0] for ele in in_out_sample_sr_list],
+                    y = [ele[1] for ele in in_out_sample_sr_list])
+        plt.title('Combination Test')
+
+        plt.figure()
+        plt.hist(logit_list, bins = 20)
+        plt.title('PBO: {0: .3f}'.format(pbo))
+    
+    return pbo
+
+#------------------------------------------------------------------------------
+def calculate_pbo_v2(return_df, target_var_name, n = 50, 
+                     sample_size = 20, round_num = 1000, if_plot = False):
+    com_step = int(np.floor(return_df.shape[0] / float(n)))
+    date_list = list(return_df.index)
+
+    com_date_list = []
+    start_index = 0
+    while start_index < len(date_list):
+        end_index = min(len(date_list) - 1,
+                        start_index + com_step - 1)
+
+        start_date = date_list[start_index]
+        end_date = date_list[end_index]
+
+        com_date_list.append([start_date, end_date])
+
+        start_index += com_step
+    com_date_list = com_date_list[:n]
+
+    total_combination_list = []
+    for i in range(round_num):
+        tmp_list = random.sample(range(n), sample_size)
+        total_combination_list.append(
+            [tmp_list[:int(0.5*sample_size)], tmp_list[int(0.5*sample_size):]])
+
+    logit_list = []
+    in_out_sample_sr_list = []
+
+    for list_pair in total_combination_list:
+        in_sample_com = list_pair[0]
+        out_sample_com = list_pair[1]
+
+        in_sample_return_df = pd.DataFrame()
+        out_sample_return_df = pd.DataFrame()
+
+        for com_num in in_sample_com:
+            in_sample_start_date = com_date_list[com_num][0]
+            in_sample_end_date = com_date_list[com_num][1]
+
+            tmp_in_sample_df = return_df.loc[
+                in_sample_start_date:in_sample_end_date]
+            in_sample_return_df = pd.concat(
+                [in_sample_return_df, tmp_in_sample_df])
+
+        for out_com_num in out_sample_com:
+            out_sample_start_date = com_date_list[out_com_num][0]
+            out_sample_end_date = com_date_list[out_com_num][1]
+
+            tmp_out_sample_df = return_df.loc[
+                out_sample_start_date:out_sample_end_date]
+            out_sample_return_df = pd.concat(
+                [out_sample_return_df, tmp_out_sample_df])
+
+        in_sample_sr_dict = defaultdict()
+        out_sample_sr_dict = defaultdict()
+
+        for column in in_sample_return_df.columns:
+            in_sample_sr_dict[column] = calculate_sharpe_ratio(
+                in_sample_return_df[column])
+            out_sample_sr_dict[column] = calculate_sharpe_ratio(
+                out_sample_return_df[column])
+
+        in_sample_sr_df = pd.DataFrame.from_dict(
+            in_sample_sr_dict, orient = 'index').T
+        out_sample_sr_df = pd.DataFrame.from_dict(
+            out_sample_sr_dict, orient = 'index').T
+
+    #     in_sample_optimal = (in_sample_sr_df.rank(axis = 1)
+    #                          / in_sample_sr_df.shape[1]).idxmax(axis = 1)[0]
+        in_sample_optimal = target_var_name
+
+        out_sample_rank = (
+            out_sample_sr_df.rank(axis = 1)
+            / out_sample_sr_df.shape[1]).loc[0, in_sample_optimal]
+
+        in_out_sample_sr_list.append([in_sample_sr_dict[in_sample_optimal],
+                                      out_sample_sr_dict[in_sample_optimal]])
+
+        logit_value = np.log(out_sample_rank / (1 - out_sample_rank))
+        if np.abs(logit_value) == np.inf:
+            logit_value = 4 * np.sign(logit_value)
+        logit_list.append(logit_value)
+
+    pbo = len([ele for ele in logit_list if ele < 0]) / float(len(logit_list))
+
+    if if_plot: 
+        plt.figure()
+        plt.scatter(x = [ele[0] for ele in in_out_sample_sr_list],
+                    y = [ele[1] for ele in in_out_sample_sr_list])
+        plt.title('sample size: {0}, round: {1}'.format(
+            str(sample_size), str(round_num)))
+
+        plt.figure()
+        plt.hist(logit_list)
+        plt.title('PBO: {0: .3f}'.format(pbo))
+    
+    return pbo
 
 
 ###############################################################################
