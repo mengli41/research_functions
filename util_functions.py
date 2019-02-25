@@ -1439,7 +1439,12 @@ def calculate_pbo_v1(return_df, target_var_name, n = 10, if_plot = False):
             logit_value = 4 * np.sign(logit_value)
         logit_list.append(logit_value)
         
-    pbo = len([ele for ele in logit_list if ele < 0]) / float(len(logit_list))
+    if return_df[target_var_name].mean() > 0.0:
+        pbo = (len([ele for ele in logit_list if ele < 0]) 
+               / float(len(logit_list)))
+    else:
+        pbo = (len([ele for ele in logit_list if ele > 0]) 
+               / float(len(logit_list)))
 
     if if_plot:
         plt.figure()
@@ -1537,7 +1542,12 @@ def calculate_pbo_v2(return_df, target_var_name, n = 50,
             logit_value = 4 * np.sign(logit_value)
         logit_list.append(logit_value)
 
-    pbo = len([ele for ele in logit_list if ele < 0]) / float(len(logit_list))
+    if return_df[target_var_name].mean() > 0.0:
+        pbo = (len([ele for ele in logit_list if ele < 0]) 
+               / float(len(logit_list)))
+    else:
+        pbo = (len([ele for ele in logit_list if ele > 0]) 
+               / float(len(logit_list)))
 
     if if_plot: 
         plt.figure()
