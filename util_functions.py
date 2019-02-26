@@ -1459,6 +1459,66 @@ def calculate_pbo_v1(return_df, target_var_name, n = 10, if_plot = False):
     return pbo
 
 #------------------------------------------------------------------------------
+def calculate_pbo_v1_light(return_df, target_var_name, n = 10):
+    com_step = int(np.floor(return_df.shape[0] / float(n)))
+    date_list = list(return_df.index)
+
+    com_date_list = []
+    start_index = 0
+    while start_index < len(date_list):
+        end_index = min(len(date_list) - 1, start_index + com_step - 1)
+
+        start_date = date_list[start_index]
+        end_date = date_list[end_index]
+
+        com_date_list.append([start_date, end_date])
+
+        start_index += com_step
+
+    com_date_list = com_date_list[:n]
+
+    date_combination_list = [list(ele) for ele in combinations(range(n), 5)]
+
+    logit_list = []
+    for sample_com in date_combination_list:
+        sample_return_df = pd.DataFrame()
+
+        for com_num in sample_com:
+            sample_start_date = com_date_list[com_num][0]
+            sample_end_date = com_date_list[com_num][1]
+
+            tmp_sample_df = return_df.loc[
+                sample_start_date:sample_end_date]
+            sample_return_df = pd.concat(
+                [sample_return_df, tmp_sample_df])
+
+        sample_sr_dict = defaultdict()
+        for column in sample_return_df.columns:
+            sample_sr_dict[column] = calculate_sharpe_ratio(
+                sample_return_df[column])
+
+        sample_sr_df = pd.DataFrame.from_dict(
+           sample_sr_dict, orient = 'index').T
+
+        sample_rank = (
+           sample_sr_df.rank(axis = 1)
+           / sample_sr_df.shape[1]).loc[0, target_var_name]
+
+        logit_value = np.log(sample_rank / (1 - sample_rank))
+        if np.abs(logit_value) == np.inf:
+            logit_value = 4 * np.sign(logit_value)
+        logit_list.append(logit_value)
+
+    if return_df[target_var_name].mean() > 0.0:
+        pbo = (len([ele for ele in logit_list if ele < 0]) 
+               / float(len(logit_list)))
+    else:
+        pbo = (len([ele for ele in logit_list if ele > 0]) 
+               / float(len(logit_list)))
+
+    return pbo
+
+#------------------------------------------------------------------------------
 def calculate_pbo_v2(return_df, target_var_name, n = 50, 
                      sample_size = 20, round_num = 1000, if_plot = False):
     com_step = int(np.floor(return_df.shape[0] / float(n)))
@@ -1560,6 +1620,71 @@ def calculate_pbo_v2(return_df, target_var_name, n = 50,
         plt.hist(logit_list)
         plt.title('PBO: {0: .3f}'.format(pbo))
     
+    return pbo
+
+#------------------------------------------------------------------------------
+def calculate_pbo_v2_light(return_df, target_var_name, n = 50, 
+                           sample_size = 20, round_num = 1000):
+    com_step = int(np.floor(return_df.shape[0] / float(n)))
+    date_list = list(return_df.index)
+
+    com_date_list = []
+    start_index = 0
+    while start_index < len(date_list):
+        end_index = min(len(date_list) - 1,
+                        start_index + com_step - 1)
+
+        start_date = date_list[start_index]
+        end_date = date_list[end_index]
+
+        com_date_list.append([start_date, end_date])
+
+        start_index += com_step
+    com_date_list = com_date_list[:n]
+
+    total_combination_list = []
+    for i in range(round_num):
+        tmp_list = random.sample(range(n), sample_size)
+        total_combination_list.append(tmp_list)
+
+    logit_list = []
+
+    for sample_com in total_combination_list:
+        sample_return_df = pd.DataFrame()
+
+        for com_num in sample_com:
+            sample_start_date = com_date_list[com_num][0]
+            sample_end_date = com_date_list[com_num][1]
+
+            tmp_sample_df = return_df.loc[
+                sample_start_date:sample_end_date]
+            sample_return_df = pd.concat(
+                [sample_return_df, tmp_sample_df])
+
+        sample_sr_dict = defaultdict()
+        for column in sample_return_df.columns:
+            sample_sr_dict[column] = calculate_sharpe_ratio(
+                sample_return_df[column])
+
+        sample_sr_df = pd.DataFrame.from_dict(
+            sample_sr_dict, orient = 'index').T
+
+        sample_rank = (
+            sample_sr_df.rank(axis = 1)
+            / sample_sr_df.shape[1]).loc[0, target_var_name]
+
+        logit_value = np.log(sample_rank / (1 - sample_rank))
+        if np.abs(logit_value) == np.inf:
+            logit_value = 4 * np.sign(logit_value)
+        logit_list.append(logit_value)
+
+    if return_df[target_var_name].mean() > 0.0:
+        pbo = (len([ele for ele in logit_list if ele < 0]) 
+               / float(len(logit_list)))
+    else:
+        pbo = (len([ele for ele in logit_list if ele > 0]) 
+               / float(len(logit_list)))
+
     return pbo
 
 
