@@ -1329,6 +1329,53 @@ class FactorQuantileTest:
             self.quantile_feature_dict['market'] = market_df
 
     #--------------------------------------------------------------------------
+    def generate_quantile_dict_v2(self, quantile_num = 5, 
+                                  feature_keyword = 'feature', 
+                                  include_market = False):
+        test_feature_df = self.feature_df.dropna(axis = 0, how = 'all')
+        rank_df = test_feature_df.rank(axis = 1)
+        self.duplicate_date_list = []
+
+        q_labels = ['{0}_q_{1}'.format(feature_keyword, str(i)) 
+                    for i in range(quantile_num)]
+        self.categorical_feature_df = np.nan * rank_df
+
+        for rank_date in rank_df.index:
+            try:
+                tmp_df = pd.qcut(rank_df.loc[rank_date], 
+                                 quantile_num, q_labels)
+                self.categorical_feature_df.loc[rank_date] = tmp_df
+            except:
+                self.duplicate_date_list.append(rank_date)
+
+#        self.categorical_feature_df = self.categorical_feature_df.fillna(
+#            method = 'ffill')
+        if len(self.duplicate_date_list) > 0:
+            for dup_date in self.duplicate_date_list:
+                max_rank = rank_df.loc[dup_date].max()
+                min_rank = rank_df.loc[dup_date].min()
+                step = max_rank / float(quantile_num)
+
+                q_range = [step*i for i in range(1, quantile_num)]
+                q_range = sorted(q_range + [min_rank, max_rank])
+
+                dup_df = rank_df.loc[dup_date]
+                for i in range(len(q_labels)):
+                    self.categorical_feature_df.loc[
+                        dup_date, 
+                        ((dup_df > q_range[i]) 
+                         & (dup_df <= q_range[i+1]))] = q_labels[i]
+
+        for q_label in q_labels:
+            q_dummy_df = 1 * (self.categorical_feature_df == q_label)
+            self.quantile_feature_dict[q_label] = q_dummy_df
+
+        if include_market:
+            # This is to calculate the equanlly weighted market mean return.
+            market_df = 1 * rank_df.notnull()
+            self.quantile_feature_dict['market'] = market_df
+
+    #--------------------------------------------------------------------------
     def factor_backtest(self, intraday_return_df, interday_return_df, 
                         risk_free_rate = 0.0):
         for key,value in self.quantile_feature_dict.items():
