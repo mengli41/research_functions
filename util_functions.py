@@ -259,7 +259,7 @@ def read_all_intraday_data_v2(
 #------------------------------------------------------------------------------
 def read_tick_data_from_sql(contract_type, date_start, date_end, iprint = 0):
     db = create_engine(
-        'postgresql+psycopg2://readonly:123456@192.168.1.120/ticks_timescale')
+        'postgresql+psycopg2://readonly:123456@192.168.1.155/ticks_timescale')
 #        'postgresql+psycopg2://limeng:123456@192.168.1.188/ticks_timescale')
 
     database_name = contract_type
@@ -1670,8 +1670,8 @@ def calculate_pbo_v2(return_df, target_var_name, n = 50,
     return pbo
 
 #------------------------------------------------------------------------------
-def calculate_pbo_v2_light(return_df, target_var_name, n = 50, 
-                           sample_size = 20, round_num = 1000):
+def calculate_pbo_v2_light(
+    return_df, n = 50, sample_size = 10, round_num = 1000):
     com_step = int(np.floor(return_df.shape[0] / float(n)))
     date_list = list(return_df.index)
 
@@ -1694,7 +1694,9 @@ def calculate_pbo_v2_light(return_df, target_var_name, n = 50,
         tmp_list = random.sample(range(n), sample_size)
         total_combination_list.append(tmp_list)
 
-    logit_list = []
+    logit_dict = {}
+    for column in return_df.columns:
+        logit_dict[column] = []
 
     for sample_com in total_combination_list:
         sample_return_df = pd.DataFrame()
@@ -1708,7 +1710,7 @@ def calculate_pbo_v2_light(return_df, target_var_name, n = 50,
             sample_return_df = pd.concat(
                 [sample_return_df, tmp_sample_df])
 
-        sample_sr_dict = defaultdict()
+        sample_sr_dict = {}
         for column in sample_return_df.columns:
             sample_sr_dict[column] = calculate_sharpe_ratio(
                 sample_return_df[column])
@@ -1716,23 +1718,25 @@ def calculate_pbo_v2_light(return_df, target_var_name, n = 50,
         sample_sr_df = pd.DataFrame.from_dict(
             sample_sr_dict, orient = 'index').T
 
-        sample_rank = (
-            sample_sr_df.rank(axis = 1)
-            / sample_sr_df.shape[1]).loc[0, target_var_name]
+        for column in return_df.columns:
+            sample_rank = sample_sr_df.rank(
+                axis = 1, pct = True).loc[0, column]
+            logit_value = np.log(sample_rank / (1 - sample_rank))
+            if np.abs(logit_value) == np.inf:
+                logit_value = 4 * np.sign(logit_value)
+            logit_dict[column].append(logit_value)
 
-        logit_value = np.log(sample_rank / (1 - sample_rank))
-        if np.abs(logit_value) == np.inf:
-            logit_value = 4 * np.sign(logit_value)
-        logit_list.append(logit_value)
+    pbo_dict = {}
+    for column in return_df.columns:
+        if return_df[column].mean() > 0.0:
+            pbo = (len([ele for ele in logit_dict[column] if ele < 0]) 
+                   / float(len(logit_dict[column])))
+        else:
+            pbo = (len([ele for ele in logit_dict[column] if ele > 0]) 
+                   / float(len(logit_dict[column])))
+        pbo_dict[column] = pbo
 
-    if return_df[target_var_name].mean() > 0.0:
-        pbo = (len([ele for ele in logit_list if ele < 0]) 
-               / float(len(logit_list)))
-    else:
-        pbo = (len([ele for ele in logit_list if ele > 0]) 
-               / float(len(logit_list)))
-
-    return pbo
+    return pbo_dict
 
 
 ###############################################################################
