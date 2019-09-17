@@ -1017,80 +1017,6 @@ def rolling_model_building_with_industry_neutral(
 
     return result_dict
 
-#------------------------------------------------------------------------------
-class Regression:
-    #--------------------------------------------------------------------------
-    def __init__(self, dep_df, ind_df):         
-        if len(dep_df.columns) == 1: 
-            self.dep_df = dep_df
-            self.ind_df = ind_df
-        else: 
-            print('Please check the dependent variable again!')
-    
-    #--------------------------------------------------------------------------
-    def prepare_data(self, include_const = True): 
-        dep_var = self.dep_df.columns[0]
-        ind_var = list(self.ind_df.columns)
-        ind_var_num = len(ind_var)
-        
-        self.estimate_df = pd.concat(
-            [self.dep_df, self.ind_df], axis = 1).dropna()
-        self.estimate_df['const'] = 1.0
-        
-        if include_const: 
-            self.total_ind_vars = ind_var + ['const']
-            self.total_ind_vars_num = ind_var_num + 1
-        else: 
-            self.total_ind_vars = ind_var
-            self.total_ind_vars_num = ind_var_num
-        
-        x = np.array(self.estimate_df.loc[:, self.total_ind_vars]) 
-        self.x = x.reshape((len(x), self.total_ind_vars_num)) 
-        self.y = np.array(self.estimate_df.loc[:, dep_var])
-    
-    #--------------------------------------------------------------------------
-    def regress(self): 
-        self.beta = (
-            np.linalg.inv(self.x.T.dot(self.x)).dot(self.x.T).dot(self.y))
-        self.r_squared = (
-            np.sum((self.x.dot(self.beta) - np.mean(self.y)) ** 2) 
-            / np.sum((self.y - np.mean(self.y)) ** 2))
-        self.adj_r_squared = (
-            self.r_squared 
-            - ((self.total_ind_vars_num - 1) 
-               / np.float((len(self.y) - self.total_ind_vars_num))) 
-            * (1 - self.r_squared))
-        self.f_stat = (
-            (np.sum((self.x.dot(self.beta) - np.mean(self.y)) ** 2) 
-             / (self.total_ind_vars_num-1)) 
-            / (np.sum((self.y - self.x.dot(self.beta)) ** 2) 
-               / (np.float(len(self.y))-np.float(self.total_ind_vars_num))))
-
-        t_stat = (
-            self.beta / np.sqrt(np.diag(np.linalg.inv(self.x.T.dot(self.x)))) 
-            / np.sqrt(np.sum((self.y - self.x.dot(self.beta)) ** 2) 
-                      / np.float(len(self.y)-self.total_ind_vars_num)))
-        self.t_stat_df = pd.DataFrame(t_stat, index = self.total_ind_vars).T
-        
-        resid = self.y - self.x.dot(self.beta)
-        self.resid_df = pd.DataFrame(
-            resid, columns = ['resid'], 
-            index = self.estimate_df.index).reindex(self.dep_df.index)
-    
-    #--------------------------------------------------------------------------
-    def calculate_wald_stat(self, test_const = False): 
-        cov = (np.linalg.inv(self.x.T.dot(self.x)) 
-               * (np.sum((self.y - self.x.dot(self.beta)) ** 2) 
-                  / np.float(len(self.y)-self.total_ind_vars_num)))
-        if test_const: 
-            self.wald_stat = self.beta.T.dot(np.linalg.inv(cov)).dot(self.beta)
-        else: 
-            self.wald_stat = (
-                self.beta[:(self.total_ind_vars_num-1)].T.dot(
-                    np.linalg.inv(
-                        cov[:(self.total_ind_vars_num-1), 
-                            :(self.total_ind_vars_num-1)])).dot(
-                                self.beta[:(self.total_ind_vars_num-1)]))
 
 
 ###############################################################################
@@ -2050,6 +1976,82 @@ def OLSReg(X1,Y):
     model = regression.linear_model.OLS(Y, X).fit()
     alpha, beta1 = model.params
     return alpha, beta1
+
+#------------------------------------------------------------------------------
+class Regression:
+    #--------------------------------------------------------------------------
+    def __init__(self, dep_df, ind_df):         
+        if len(dep_df.columns) == 1: 
+            self.dep_df = dep_df
+            self.ind_df = ind_df
+        else: 
+            print('Please check the dependent variable again!')
+    
+    #--------------------------------------------------------------------------
+    def prepare_data(self, include_const = True): 
+        dep_var = self.dep_df.columns[0]
+        ind_var = list(self.ind_df.columns)
+        ind_var_num = len(ind_var)
+        
+        self.estimate_df = pd.concat(
+            [self.dep_df, self.ind_df], axis = 1).dropna()
+        self.estimate_df['const'] = 1.0
+        
+        if include_const: 
+            self.total_ind_vars = ind_var + ['const']
+            self.total_ind_vars_num = ind_var_num + 1
+        else: 
+            self.total_ind_vars = ind_var
+            self.total_ind_vars_num = ind_var_num
+        
+        x = np.array(self.estimate_df.loc[:, self.total_ind_vars]) 
+        self.x = x.reshape((len(x), self.total_ind_vars_num)) 
+        self.y = np.array(self.estimate_df.loc[:, dep_var])
+    
+    #--------------------------------------------------------------------------
+    def regress(self): 
+        self.beta = (
+            np.linalg.inv(self.x.T.dot(self.x)).dot(self.x.T).dot(self.y))
+        self.r_squared = (
+            np.sum((self.x.dot(self.beta) - np.mean(self.y)) ** 2) 
+            / np.sum((self.y - np.mean(self.y)) ** 2))
+        self.adj_r_squared = (
+            self.r_squared 
+            - ((self.total_ind_vars_num - 1) 
+               / np.float((len(self.y) - self.total_ind_vars_num))) 
+            * (1 - self.r_squared))
+        self.f_stat = (
+            (np.sum((self.x.dot(self.beta) - np.mean(self.y)) ** 2) 
+             / (self.total_ind_vars_num-1)) 
+            / (np.sum((self.y - self.x.dot(self.beta)) ** 2) 
+               / (np.float(len(self.y))-np.float(self.total_ind_vars_num))))
+
+        t_stat = (
+            self.beta / np.sqrt(np.diag(np.linalg.inv(self.x.T.dot(self.x)))) 
+            / np.sqrt(np.sum((self.y - self.x.dot(self.beta)) ** 2) 
+                      / np.float(len(self.y)-self.total_ind_vars_num)))
+        self.t_stat_df = pd.DataFrame(t_stat, index = self.total_ind_vars).T
+        
+        resid = self.y - self.x.dot(self.beta)
+        self.resid_df = pd.DataFrame(
+            resid, columns = ['resid'], 
+            index = self.estimate_df.index).reindex(self.dep_df.index)
+    
+    #--------------------------------------------------------------------------
+    def calculate_wald_stat(self, test_const = False): 
+        cov = (np.linalg.inv(self.x.T.dot(self.x)) 
+               * (np.sum((self.y - self.x.dot(self.beta)) ** 2) 
+                  / np.float(len(self.y)-self.total_ind_vars_num)))
+        if test_const: 
+            self.wald_stat = self.beta.T.dot(np.linalg.inv(cov)).dot(self.beta)
+        else: 
+            self.wald_stat = (
+                self.beta[:(self.total_ind_vars_num-1)].T.dot(
+                    np.linalg.inv(
+                        cov[:(self.total_ind_vars_num-1), 
+                            :(self.total_ind_vars_num-1)])).dot(
+                                self.beta[:(self.total_ind_vars_num-1)]))
+
 
 
 ###############################################################################
