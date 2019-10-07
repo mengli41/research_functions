@@ -360,6 +360,58 @@ def read_daily_data_from_msg(data_address_str):
 ###############################################################################
 # Data Preprocess
 #------------------------------------------------------------------------------
+class GenerateDailyBacktestData: 
+    #--------------------------------------------------------------------------
+    def __init__(self, total_start_date, total_end_date, 
+                 daily_data_address, contracts_to_remove): 
+        self.total_start_date = total_start_date
+        self.total_end_date = total_end_date
+        self.daily_data_address = daily_data_address
+        self.contracts_to_remove = contracts_to_remove
+    
+    #--------------------------------------------------------------------------
+    def read_daily_data(self): 
+        self.daily_data = pd.read_hdf(self.daily_data_address).loc[
+            self.total_start_date:self.total_end_date, :]
+        self.daily_data = self.daily_data.fillna(method = 'ffill').replace(
+            0, method = 'ffill')
+    
+    #--------------------------------------------------------------------------
+    def generate_date_range_lists(self, test_start_date): 
+        self.total_range = list(self.daily_data.index)
+        self.test_range = list(
+            self.daily_data.loc[test_start_date:, :].index)
+    
+    #--------------------------------------------------------------------------
+    def generate_liquid_contracts(self): 
+        volume_df = self.daily_data['Volume']
+        avg_volume_df = volume_df.rolling(window = 20).mean()
+
+        self.liquid_contract_df = avg_volume_df.copy() * np.nan
+        self.liquid_contract_df[avg_volume_df > 10000.0] = 1
+        self.liquid_contract_df[avg_volume_df <= 8000.0] = 0
+        self.liquid_contract_df = self.liquid_contract_df.fillna(
+            method = 'ffill').fillna(0)
+
+        for ele in self.contracts_to_remove:
+            self.liquid_contract_df[ele] = 0
+        
+    #--------------------------------------------------------------------------
+    def generate_backtest_returns(self): 
+        self.close_df = self.daily_data['Close'].fillna(
+            method = 'ffill')
+        self.open_df = self.daily_data['Open'].fillna(
+            method = 'ffill')
+        self.preclose_df = self.daily_data['Close'].shift().fillna(
+            method = 'ffill')
+
+        self.close_return_df = np.log(self.close_df).diff()
+        self.interday_return_df = (
+            np.log(self.open_df) - np.log(self.preclose_df))
+        self.intraday_return_df = (
+            np.log(self.close_df) - np.log(self.open_df))
+
+#------------------------------------------------------------------------------
 def industry_demean_return(return_df, industry_dict, 
                            industry_neutral_list = [], 
                            if_all_industry = True): 
