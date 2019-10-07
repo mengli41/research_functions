@@ -384,7 +384,7 @@ class GenerateDailyBacktestData:
     
     #--------------------------------------------------------------------------
     def generate_liquid_contracts(self): 
-        volume_df = self.daily_data['Volume']
+        volume_df = self.daily_data['volume']
         avg_volume_df = volume_df.rolling(window = 20).mean()
 
         self.liquid_contract_df = avg_volume_df.copy() * np.nan
@@ -398,11 +398,11 @@ class GenerateDailyBacktestData:
         
     #--------------------------------------------------------------------------
     def generate_backtest_returns(self): 
-        self.close_df = self.daily_data['Close'].fillna(
+        self.close_df = self.daily_data['close'].fillna(
             method = 'ffill')
-        self.open_df = self.daily_data['Open'].fillna(
+        self.open_df = self.daily_data['open'].fillna(
             method = 'ffill')
-        self.preclose_df = self.daily_data['Close'].shift().fillna(
+        self.preclose_df = self.daily_data['close'].shift().fillna(
             method = 'ffill')
 
         self.close_return_df = np.log(self.close_df).diff()
